@@ -26,3 +26,7 @@ Swagger: http://127.0.0.1:8000/docs
 ```bash
 docker compose run --rm backend pytest
 ```
+
+## Unified Data Engine
+
+The current version adds canonical content videos, platform publications and immutable metric snapshots. API endpoints are available under `/api/content` and documented in Swagger at `http://127.0.0.1:8000/docs`.
