@@ -1,0 +1,24 @@
+import os
+from pathlib import Path
+from typing import Any
+
+from app.core.config import Settings
+
+SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
+
+
+def configure_local_oauth(settings: Settings) -> None:
+    if settings.environment == "development" and settings.oauth_insecure_transport:
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+
+def build_flow(settings: Settings, state: str | None = None) -> Any:
+    from google_auth_oauthlib.flow import Flow
+
+    configure_local_oauth(settings)
+    path = Path(settings.google_client_secrets_file)
+    if not path.exists():
+        raise FileNotFoundError(f"Brak pliku OAuth: {path}")
+    flow = Flow.from_client_secrets_file(str(path), scopes=SCOPES, state=state)
+    flow.redirect_uri = settings.google_redirect_uri
+    return flow

@@ -1,0 +1,21 @@
+{
+  "name": "rcc-frontend",
+  "version": "1.0.0-sprint1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "15.4.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.1.0",
+    "@types/react": "19.1.9",
+    "typescript": "5.8.3"
+  }
+}
