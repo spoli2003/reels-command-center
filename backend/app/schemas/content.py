@@ -43,6 +43,14 @@ class ContentVideoCreate(BaseModel):
     language: str = Field(default="pl", min_length=2, max_length=16)
 
 
+class ContentVideoUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    description: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=100)
+    duration_seconds: Optional[int] = Field(default=None, ge=0)
+    language: Optional[str] = Field(default=None, min_length=2, max_length=16)
+
+
 class ContentVideoRead(ContentVideoCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -52,3 +60,4 @@ class ContentVideoRead(ContentVideoCreate):
     publications: list[PublicationRead] = []
     total_views: int = 0
     total_interactions: int = 0
+    engagement_rate: float = 0.0
