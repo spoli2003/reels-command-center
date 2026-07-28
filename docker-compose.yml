@@ -5,27 +5,29 @@ services:
       POSTGRES_DB: rcc
       POSTGRES_USER: rcc
       POSTGRES_PASSWORD: rcc_dev_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rcc -d rcc"]
       interval: 5s
       timeout: 5s
       retries: 10
-
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes: [redis_data:/data]
   backend:
     build: ./backend
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://rcc:rcc_dev_password@db:5432/rcc
+      REDIS_URL: redis://redis:6379/0
+    command: ["/app/entrypoint.sh"]
     volumes:
       - ./backend:/app
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
     depends_on:
-      db:
-        condition: service_healthy
-
+      db: {condition: service_healthy}
+      redis: {condition: service_started}
   frontend:
     build: ./frontend
     environment:
@@ -34,10 +36,8 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-
+    ports: ["3000:3000"]
+    depends_on: [backend]
 volumes:
   postgres_data:
+  redis_data:

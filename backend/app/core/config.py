@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./rcc.db"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     session_secret: str = "change-me-in-env"
+    jwt_secret: str = "change-me-jwt-secret"
+    access_token_minutes: int = 10080
+    redis_url: str = "redis://redis:6379/0"
     token_encryption_key: str = ""
     google_client_secrets_file: str = "secrets/google_client_secret.json"
     google_redirect_uri: str = "http://127.0.0.1:8000/api/integrations/youtube/callback"
