@@ -73,7 +73,7 @@ def callback(request: Request, state: str, code: str, db: Session = Depends(get_
     if not code_verifier:
         raise HTTPException(400, "Brak code verifier OAuth. Rozpocznij logowanie ponownie.")
     flow = build_flow(settings, state=state, code_verifier=code_verifier)
-    flow.fetch_token(code=code)
+    flow.fetch_token(code=code, code_verifier=code_verifier)
     credentials = flow.credentials
     client = YoutubeClient(credentials)
     raw_channel = client.get_my_channel()
