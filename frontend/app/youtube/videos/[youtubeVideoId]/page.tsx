@@ -14,6 +14,7 @@ import { ExternalLink, youtubeWatchUrl } from "../../../../components/external-l
 import { InsightsList } from "../../../../components/insights-list";
 import { PerformanceLabelBadge } from "../../../../components/performance-label-badge";
 import { RankedVideoList } from "../../../../components/ranked-video-list";
+import { SyncStatusLine } from "../../../../components/sync-status-line";
 import { UnavailableMetricsCard } from "../../../../components/unavailable-metrics-card";
 import { VideoNavKeyboard } from "../../../../components/video-nav-keyboard";
 import { createYoutubeApi } from "../../../../lib/youtube-api";
@@ -77,10 +78,11 @@ export default async function YoutubeVideoDetailPage({
   const { youtubeVideoId } = await params;
   const { from } = await searchParams;
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [detail, history, summary, allVideosRaw] = await Promise.all([
+  const [detail, history, summary, status, allVideosRaw] = await Promise.all([
     api.getVideoDetail(youtubeVideoId),
     api.getVideoHistory(youtubeVideoId),
     api.getSummary(),
+    api.getStatus(),
     api.getVideos(),
   ]);
 
@@ -187,7 +189,7 @@ export default async function YoutubeVideoDetailPage({
             <span>{formatDuration(detail.duration_seconds)}</span>
             <span>{summary?.channel_title ?? "Brak danych"}</span>
             <span title="Widoczność filmu nie jest obecnie zapisywana przez RCC">Widoczność: Brak danych</span>
-            <span>{summary?.last_synced_at ? `Zsynchronizowano: ${new Date(summary.last_synced_at).toLocaleString("pl-PL")}` : "Brak danych o synchronizacji"}</span>
+            <SyncStatusLine status={status} />
           </div>
           <div className="videoActions">
             <ExternalLink href={watchUrl} label="Obejrzyj na YouTube" variant="button" />

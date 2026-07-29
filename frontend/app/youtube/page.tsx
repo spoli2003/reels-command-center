@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
 import { PlatformSubNav } from "../../components/platform-sub-nav";
+import { SyncStatusLine } from "../../components/sync-status-line";
 import { YoutubeDashboard } from "../../components/youtube-dashboard";
 import { createYoutubeApi } from "../../lib/youtube-api";
 
@@ -9,8 +10,9 @@ const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000"
 
 export default async function YoutubeDashboardPage() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [summary, videos, viewsSeries, likesSeries, commentsSeries, channelHistory] = await Promise.all([
+  const [summary, status, videos, viewsSeries, likesSeries, commentsSeries, channelHistory] = await Promise.all([
     api.getSummary(),
+    api.getStatus(),
     api.getVideos(),
     api.getTimeseries("views"),
     api.getTimeseries("likes"),
@@ -28,7 +30,12 @@ export default async function YoutubeDashboardPage() {
           <h1>Dashboard YouTube</h1>
           <p className="muted">
             {summary?.channel_title ?? "Kanał niepołączony"}
-            {summary?.last_synced_at ? ` · ostatnia synchronizacja: ${new Date(summary.last_synced_at).toLocaleString("pl-PL")}` : ""}
+            {summary ? (
+              <>
+                {" · "}
+                <SyncStatusLine status={status} />
+              </>
+            ) : null}
           </p>
         </div>
         <Link className="primaryButton" href="/youtube/compare">

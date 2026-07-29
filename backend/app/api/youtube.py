@@ -10,12 +10,12 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.integrations.youtube.client import YoutubeClient, credentials_from_tokens
 from app.integrations.youtube.oauth import build_flow, load_client_secrets
-from app.models.integration import PlatformAccount, SyncRun, YoutubeChannel, YoutubeMetricSnapshot, YoutubeVideo
+from app.models.integration import PlatformAccount, SyncRun, YoutubeMetricSnapshot, YoutubeVideo
 from app.schemas.integration import SyncResult, YoutubeStatus, YoutubeVideoRead
 from app.schemas.youtube_analytics import ChannelHistoryRead, DataQualityReport, VideoDetailRead, VideoHistoryRead
 from app.services import youtube_scheduler
 from app.services.token_crypto import decrypt_token, encrypt_token
-from app.services.youtube_analytics import get_channel_history, get_video_detail, get_video_history
+from app.services.youtube_analytics import get_channel, get_channel_history, get_video_detail, get_video_history
 from app.services.youtube_data_quality import audit_youtube_data_quality
 from app.services.youtube_intelligence_adapter import compute_all_video_metadata, get_video_history_buckets
 from app.services.youtube_sync import SyncAlreadyRunningError, sync_youtube
@@ -28,7 +28,7 @@ def status(db: Session = Depends(get_db)):
     settings = get_settings()
     configured = settings.client_secrets_path.exists() and bool(settings.token_encryption_key)
     account = db.scalar(select(PlatformAccount).where(PlatformAccount.platform == "youtube"))
-    channel = None if account is None else db.scalar(select(YoutubeChannel).where(YoutubeChannel.account_id == account.id))
+    channel = get_channel(db)
     video_count = 0 if channel is None else db.scalar(select(func.count(YoutubeVideo.id)).where(YoutubeVideo.channel_id == channel.id)) or 0
 
     last_run = db.scalar(

@@ -171,3 +171,27 @@ per ADR-009.
 one sync target. Revisit this decision (a real worker service, e.g. once Redis is
 used for more than incidental config) only if RCC needs to run sync jobs across
 multiple processes/replicas — not before.
+
+### ADR-016 — `GET /status` is the single source of truth for synchronization state
+**Context:** Release 0.6.1 bugfix. Home, the YouTube Dashboard, and Video Detail each
+independently read a `last_synced_at` computed by `get_summary()`, while the YouTube
+integration panel read a separately-computed `last_synced_at` from `GET /status`.
+Both ultimately queried `channel.synced_at`, so they could never differ in the
+database — but they were fetched at different times (one server-rendered at page
+load, one client-fetched on mount) with no shared cache-invalidation, so a sync
+triggered from the panel updated its own client state immediately while the
+server-rendered value elsewhere on the same page stayed frozen until a full reload.
+**Decision:** `SummaryRead`/`get_summary()` no longer expose `last_synced_at` at all.
+Every page that displays synchronization time/status renders the shared
+`<SyncStatusLine>` component fed by `GET /status` — never a separately-fetched or
+independently-computed timestamp. `youtube_analytics.get_channel()` is also now the
+one function every backend code path uses to look up "the connected YouTube
+channel" (previously `/status` and `get_summary()` used two independently-written
+queries that happened to agree only because RCC has exactly one channel today).
+**Consequences:** After a sync, `YoutubePanel` calls `router.refresh()` so the
+current page's server components re-fetch immediately; `next.config.js` sets
+`experimental.staleTimes.dynamic = 0` so navigating to any other page always hits
+the server for fresh data instead of a cached RSC payload. Any future page that
+needs to show sync state must reuse `<SyncStatusLine>` + `GET /status` — adding a
+new independent `last_synced_at` read anywhere is the exact regression this ADR
+exists to prevent.

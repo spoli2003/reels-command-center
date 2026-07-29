@@ -50,6 +50,14 @@ def _video_rows(db: Session) -> list[dict]:
 
 
 def get_channel(db: Session) -> Optional[YoutubeChannel]:
+    """The single lookup for "the connected YouTube channel" — every page and
+    endpoint that needs channel identity or sync state (last_synced_at, title,
+    subscriber_count, ...) must go through this function, never re-implement its
+    own query, so there is exactly one source of truth for that data (bugfix:
+    Home/Dashboard/Video-detail and the YouTube panel previously used two
+    independently-written queries for this same lookup). RCC is single-tenant
+    today (one real connected channel — see ADR-010 for the future multi-workspace
+    plan), so "most recently synced" is the correct and only sensible tiebreaker."""
     return db.scalar(select(YoutubeChannel).order_by(YoutubeChannel.synced_at.desc()))
 
 
@@ -77,7 +85,6 @@ def get_summary(db: Session) -> dict:
     return {
         "channel_title": channel.title if channel else None,
         "subscriber_count": channel.subscriber_count if channel else 0,
-        "last_synced_at": channel.synced_at if channel else None,
         "total_videos": total_videos,
         "total_views": total_views,
         "total_likes": total_likes,

@@ -4,6 +4,7 @@ import { AppShell } from "../../../components/app-shell";
 import { PlatformSubNav } from "../../../components/platform-sub-nav";
 import { RecommendationList } from "../../../components/recommendation-card";
 import { StatCard, StatsGrid } from "../../../components/stat-card";
+import { SyncStatusLine } from "../../../components/sync-status-line";
 import { TopicCard } from "../../../components/topic-card";
 import { createYoutubeApi } from "../../../lib/youtube-api";
 
@@ -15,7 +16,7 @@ function compact(value: number) {
 
 export default async function CreatorIntelligencePage() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const report = await api.getIntelligence();
+  const [report, status] = await Promise.all([api.getIntelligence(), api.getStatus()]);
 
   return (
     <AppShell active="/youtube">
@@ -25,6 +26,12 @@ export default async function CreatorIntelligencePage() {
           <h1>Co dalej?</h1>
           <p className="muted">
             Rekomendacje oparte wyłącznie na Twoich dotychczasowych danych historycznych — bez AI i bez porównań z konkurencją.
+            {report ? (
+              <>
+                {" · "}
+                <SyncStatusLine status={status} />
+              </>
+            ) : null}
           </p>
         </div>
       </header>

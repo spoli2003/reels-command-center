@@ -1,7 +1,8 @@
 export type YoutubeSummary = {
+  // last_synced_at intentionally absent — GET /status (YoutubeStatus) is the
+  // single source of truth for sync time/state everywhere in the app.
   channel_title: string | null;
   subscriber_count: number;
-  last_synced_at: string | null;
   total_videos: number;
   total_views: number;
   total_likes: number;

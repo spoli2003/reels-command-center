@@ -5,6 +5,7 @@ import { ExternalLink, youtubeWatchUrl } from "../components/external-link";
 import { RankedVideoList } from "../components/ranked-video-list";
 import { RecommendationCard } from "../components/recommendation-card";
 import { StatCard, StatsGrid } from "../components/stat-card";
+import { SyncStatusLine } from "../components/sync-status-line";
 import { YoutubePanel } from "../components/youtube-panel";
 import { createYoutubeApi } from "../lib/youtube-api";
 import { withDerivedMetrics } from "../lib/youtube-metrics";
@@ -17,7 +18,12 @@ function compact(value: number) {
 
 export default async function Home() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [summary, report, videos] = await Promise.all([api.getSummary(), api.getIntelligence(), api.getVideos()]);
+  const [summary, status, report, videos] = await Promise.all([
+    api.getSummary(),
+    api.getStatus(),
+    api.getIntelligence(),
+    api.getVideos(),
+  ]);
 
   return (
     <AppShell active="/">
@@ -26,11 +32,13 @@ export default async function Home() {
           <p className="eyebrow">359° / CENTRUM DOWODZENIA</p>
           <h1>Centrum dowodzenia</h1>
           <p className="muted">
-            {summary && videos.length > 0
-              ? `${summary.channel_title} · ostatnia synchronizacja: ${
-                  summary.last_synced_at ? new Date(summary.last_synced_at).toLocaleString("pl-PL") : "brak"
-                }`
-              : "Połącz kanał YouTube poniżej, aby odblokować dashboard, porównania i rekomendacje."}
+            {summary && videos.length > 0 ? (
+              <>
+                {summary.channel_title} · <SyncStatusLine status={status} />
+              </>
+            ) : (
+              "Połącz kanał YouTube poniżej, aby odblokować dashboard, porównania i rekomendacje."
+            )}
           </p>
         </div>
         {summary && videos.length > 0 ? (

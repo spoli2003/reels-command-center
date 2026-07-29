@@ -91,6 +91,17 @@ def test_summary_uses_latest_snapshot_per_video(seeded_videos):
     assert detail.json()["like_ratio"] == 10.0
 
 
+def test_summary_and_status_agree_on_channel_identity(seeded_videos):
+    """Release 0.6.1 bugfix: /analytics/summary and /status must derive channel
+    identity/subscriber count from the exact same lookup (get_channel), never two
+    independently-written queries that could silently diverge."""
+    summary = client.get("/api/integrations/youtube/analytics/summary").json()
+    status = client.get("/api/integrations/youtube/status").json()
+    assert summary["channel_title"] == status["channel_title"]
+    assert "last_synced_at" not in summary
+    assert status["last_synced_at"] is not None
+
+
 def test_top_and_scatter_and_history(seeded_videos):
     top_by_views = client.get("/api/integrations/youtube/analytics/top", params={"metric": "views", "limit": 5})
     assert top_by_views.status_code == 200

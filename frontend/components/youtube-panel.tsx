@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { YoutubeStatus } from "../lib/youtube-api";
@@ -14,6 +15,7 @@ const SYNC_STATUS_LABELS: Record<string, string> = {
 };
 
 export function YoutubePanel() {
+  const router = useRouter();
   const [status, setStatus] = useState<YoutubeStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -46,6 +48,11 @@ export function YoutubePanel() {
       const result = await response.json();
       setLastSyncFeedback(`Zaimportowano ${result.imported_videos} nowych filmów. Zapisano migawki dla wszystkich filmów kanału.`);
       await load();
+      // Re-render every server component on the current page (Home's header,
+      // any other page embedding this panel) with fresh data from the backend —
+      // without this, only this client component's own state would update,
+      // leaving server-rendered sync timestamps elsewhere on the page stale.
+      router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Synchronizacja nie powiodła się");
     } finally {
@@ -57,6 +64,7 @@ export function YoutubePanel() {
     if (!confirm("Odłączyć lokalnie konto YouTube i usunąć zapisane tokeny?")) return;
     await fetch(`${API_URL}/api/integrations/youtube/disconnect`, { method: "DELETE" });
     await load();
+    router.refresh();
   }
 
   return (

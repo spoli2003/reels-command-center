@@ -5,9 +5,13 @@ from pydantic import BaseModel, ConfigDict
 
 
 class SummaryRead(BaseModel):
+    # last_synced_at intentionally NOT here — GET /status is the single source of
+    # truth for synchronization time/state across the whole app (bugfix: Home,
+    # Dashboard, and Video Detail previously each read a separately-computed
+    # last_synced_at from this schema, which could show stale data relative to
+    # /status; see docs/DECISIONS.md ADR-016).
     channel_title: Optional[str] = None
     subscriber_count: int = 0
-    last_synced_at: Optional[datetime] = None
     total_videos: int = 0
     total_views: int = 0
     total_likes: int = 0

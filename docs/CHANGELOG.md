@@ -3,6 +3,32 @@
 Entries are grouped by sprint, newest first. This changelog describes product/
 engineering outcomes, not individual commits.
 
+## Release 0.6.1 — Synchronization Consistency (patch)
+
+Fixed a real bug: the Home page and the YouTube integration panel could show two
+different "last synchronization" timestamps at the same time, and other pages
+didn't reliably update after clicking "Synchronize now" without a manual reload.
+Audit found the root cause was **presentation-layer staleness, not divergent
+data** — three server-rendered pages (Home, Dashboard, Video Detail) each read a
+`last_synced_at` computed by `get_summary()`, while the client-side YouTube panel
+read a separately-computed `last_synced_at` from `GET /status`; both ultimately
+queried the same `channel.synced_at` column, but were fetched at different times
+with no shared invalidation. Fixed by making `GET /status` the single source of
+truth for synchronization time and status everywhere: `SummaryRead` no longer
+exposes `last_synced_at` at all, and Home, the YouTube Dashboard, Creator
+Intelligence, and Video Detail all render a new shared `<SyncStatusLine>`
+component fed by the exact same `/status` response — so they can never disagree.
+`youtube_analytics.get_channel()` is now the one function every backend code path
+uses to look up "the connected channel," replacing two independently-written
+queries. Added `router.refresh()` after a successful sync/disconnect so the
+current page's server components re-render with fresh data immediately, and
+disabled the Next.js client-side Router Cache for dynamic routes
+(`experimental.staleTimes.dynamic = 0` in `next.config.js`) so navigating to any
+other page always fetches current server data instead of a briefly-cached RSC
+payload. Verified by running multiple real synchronizations against the connected
+channel and confirming Home/Dashboard/Creator Intelligence/Video Detail render the
+identical timestamp immediately after each one — see ADR-016.
+
 ## Sprint 6 — Historical Analytics Engine
 
 Turned the sync path from "runs manually, hopefully without duplicating data" into a
