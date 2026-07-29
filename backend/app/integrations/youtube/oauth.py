@@ -12,13 +12,23 @@ def configure_local_oauth(settings: Settings) -> None:
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 
-def build_flow(settings: Settings, state: str | None = None) -> Any:
+def build_flow(
+    settings: Settings,
+    state: str | None = None,
+    code_verifier: str | None = None,
+) -> Any:
     from google_auth_oauthlib.flow import Flow
 
     configure_local_oauth(settings)
     path = Path(settings.google_client_secrets_file)
     if not path.exists():
         raise FileNotFoundError(f"Brak pliku OAuth: {path}")
-    flow = Flow.from_client_secrets_file(str(path), scopes=SCOPES, state=state)
+    flow = Flow.from_client_secrets_file(
+        str(path),
+        scopes=SCOPES,
+        state=state,
+        code_verifier=code_verifier,
+        autogenerate_code_verifier=code_verifier is None,
+    )
     flow.redirect_uri = settings.google_redirect_uri
     return flow

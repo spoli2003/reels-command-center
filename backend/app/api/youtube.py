@@ -55,7 +55,12 @@ def connect(request: Request):
         flow = build_flow(settings, state=state)
     except FileNotFoundError as exc:
         raise HTTPException(500, str(exc)) from exc
-    authorization_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
+    authorization_url, _ = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+    )
+    request.session["youtube_code_verifier"] = flow.code_verifier
     return RedirectResponse(authorization_url)
 
 
@@ -64,7 +69,10 @@ def callback(request: Request, state: str, code: str, db: Session = Depends(get_
     settings = get_settings()
     if state != request.session.pop("youtube_oauth_state", None):
         raise HTTPException(400, "Nieprawidłowy stan OAuth")
-    flow = build_flow(settings, state=state)
+    code_verifier = request.session.pop("youtube_code_verifier", None)
+    if not code_verifier:
+        raise HTTPException(400, "Brak code verifier OAuth. Rozpocznij logowanie ponownie.")
+    flow = build_flow(settings, state=state, code_verifier=code_verifier)
     flow.fetch_token(code=code)
     credentials = flow.credentials
     client = YoutubeClient(credentials)
