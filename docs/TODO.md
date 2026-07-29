@@ -4,36 +4,40 @@ Grouped by timeframe, then by category. This is the working roadmap — see
 [ROADMAP.md](./ROADMAP.md) for the philosophy behind it and
 [CHANGELOG.md](./CHANGELOG.md) for what has already shipped.
 
-## Release 0.7.0 — YouTube Community Inbox (done, one action required)
+## Release 0.7.1 — Community UX & Conversation Engine (done)
+
+Shipped in full — see [CHANGELOG.md](./CHANGELOG.md). Fixed the conversation-state
+bug (last-message-based, not "any reply ever"), fixed a live-discovered bug where a
+channel's own pinned top-level comment was wrongly flagged "needs reply,"
+recalculated priority to use the new state + true last-activity recency, added
+viewerRating capture + highly-liked highlighting, new filters (state/author) and
+sorts (most-replied/recently-active), and polished cards/Home/Video-Detail. 78
+backend tests pass, frontend build clean. Verified against the real connected
+channel — the account had already been reconnected and had real replies posted
+directly on YouTube, which RCC now correctly displays as Resolved.
+
+**Known follow-ups (not blockers, tracked honestly):**
+- [ ] "Double-submit protection" for replies is a UI-state guard (composer
+      disables while sending) rather than a backend idempotency key — there's no
+      natural request-level dedup for arbitrary reply text against the real
+      YouTube API. Revisit only if double-posting is observed in practice.
+- [ ] No automated visual/responsive browser testing this release either (see the
+      same caveat under Sprint 5/6 below) — Community Inbox layouts follow the
+      existing 1100px/760px breakpoints but haven't been visually confirmed.
+- [ ] "Home" now shows five community-related facts (awaiting reply, new
+      questions, resolved, most-discussed video, recently-active discussions) —
+      worth a future glance to confirm this hasn't tipped Home over into feeling
+      like a second inbox, per the release brief's "not a full comment-management
+      screen" instruction. Currently still a compact summary with one link out.
+
+## Release 0.7.0 — YouTube Community Inbox (done)
 
 Shipped in full per the release brief — see [CHANGELOG.md](./CHANGELOG.md) for the
 detailed outcome (comment model, quota-conscious sync, Community Inbox, reply/edit/
 delete, quick-reply templates, question/priority heuristics, video-detail + Home
-integration). 74 backend tests pass, frontend build is clean.
-
-**Action required from the operator (cannot be completed by an AI session):**
-- [ ] **Reconnect the YouTube account** via the "Połącz ponownie" button (Home page
-      or the YouTube panel) to grant the new `youtube.force-ssl` scope. The
-      currently connected account was authorized before this release and does not
-      have comment read/write access yet (`GET /status` correctly reports
-      `comments_scope_granted: false`, `comments_reconnect_required: true`).
-      Reconnecting is safe and additive — it only refreshes the OAuth token/scopes
-      for the same channel; no analytics data, sync history, or settings are lost.
-- [ ] **After reconnecting**, run a real comment sync from the Community Inbox and
-      spot-check a few real threads, then decide whether to publish a real test
-      reply (this specific action — publishing publicly to a real viewer's
-      comment — was intentionally left for explicit operator approval, per the
-      release brief; everything else was implemented and verified without it).
-
-**Known follow-ups (not blockers, tracked honestly):**
-- [ ] "Double-submit protection" for replies (Part 6) is implemented as a UI-state
-      guard (composer disables while sending) rather than a backend idempotency
-      key — there's no natural request-level dedup for arbitrary reply text
-      against the real YouTube API. Revisit only if double-posting is observed in
-      practice.
-- [ ] No automated visual/responsive browser testing this release either (see the
-      same caveat under Sprint 5/6 below) — Community Inbox layouts follow the
-      existing 1100px/760px breakpoints but haven't been visually confirmed.
+integration). The one action item from this release (reconnect for the
+`youtube.force-ssl` scope) has been completed by the operator — real comment sync
+and real replies are now live on the connected channel.
 
 ## Sprint 5 & 6 — Advanced Analytics + Historical Engine (done)
 

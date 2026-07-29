@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { ConversationStateBadge } from "./conversation-state-badge";
 import { ReplyComposer } from "./reply-composer";
+import { recomputeConversationState } from "../lib/conversation-state";
 import type { CommentThreadRead, QuickReplyTemplate, ReplyRead } from "../lib/youtube-api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+const PRIORITY_HIGH_THRESHOLD = 60;
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pl-PL", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(
@@ -16,6 +19,18 @@ function formatDate(value: string) {
 
 function youtubeCommentUrl(videoId: string, commentId: string) {
   return `https://www.youtube.com/watch?v=${videoId}&lc=${commentId}`;
+}
+
+function ViewerRatingBadge({ rating }: { rating: string | null }) {
+  if (rating !== "like") return null;
+  return (
+    <span
+      className="performanceBadge good"
+      title="Właściciel kanału polubił ten komentarz na YouTube. Odczyt z API — RCC nie generuje polubień."
+    >
+      👍 Polubione przez kanał
+    </span>
+  );
 }
 
 function EditableOwnReply({ reply, onChanged, onDeleted }: { reply: ReplyRead; onChanged: (reply: ReplyRead) => void; onDeleted: () => void }) {
@@ -109,10 +124,19 @@ export function CommentThreadCard({
   showVideo?: boolean;
 }) {
   const [replies, setReplies] = useState(row.replies);
-  const [answered, setAnswered] = useState(row.is_answered);
+  const [state, setState] = useState(row.conversation_state);
+  const isModerated = row.conversation_state === "closed";
+  // The top-level comment's own authorship never changes across local reply
+  // mutations — infer it once from the server-computed initial state (a
+  // channel's own pinned top-level comment with zero replies is "resolved").
+  const topLevelIsOwn = row.replies.length === 0 && row.conversation_state === "resolved";
+
+  function refreshState(nextReplies: ReplyRead[]) {
+    setState(recomputeConversationState(row.published_at, nextReplies, isModerated, topLevelIsOwn));
+  }
 
   return (
-    <article className="commentCard">
+    <article className={`commentCard${row.is_highly_liked ? " highlyLiked" : ""}`}>
       <div className="commentCardHeader">
         {row.author_avatar_url ? (
           <img className="commentAvatar" src={row.author_avatar_url} alt="" />
@@ -124,19 +148,39 @@ export function CommentThreadCard({
           <span className="muted">{formatDate(row.published_at)}</span>
         </div>
         <div className="commentCardBadges">
-          {row.is_likely_question ? <span className="performanceBadge good" title="Wykryte na podstawie znaku zapytania lub słów pytających">Prawdopodobne pytanie</span> : null}
-          <span className={`performanceBadge ${answered ? "great" : "weak"}`}>{answered ? "Odpowiedziano" : "Bez odpowiedzi"}</span>
+          {row.is_likely_question ? (
+            <span className="performanceBadge good" title="Wykryte na podstawie znaku zapytania lub słów pytających — nie mamy pewności, to sygnał, nie fakt.">
+              Prawdopodobne pytanie
+            </span>
+          ) : null}
+          {row.priority_score >= PRIORITY_HIGH_THRESHOLD ? (
+            <span
+              className="performanceBadge weak"
+              title={`Priorytet ${Math.round(row.priority_score)}/100 — liczony z: czy to pytanie, jak niedawno była ostatnia wiadomość, liczby polubień i odpowiedzi. Rozwiązane rozmowy zawsze mają priorytet 0.`}
+            >
+              ⚠ Wysoki priorytet
+            </span>
+          ) : null}
+          <ConversationStateBadge state={state} />
         </div>
       </div>
 
       <p className="commentText">{row.text_original}</p>
 
       <div className="commentMetaRow">
-        <span title="Polubienia komentarza">👍 {row.like_count.toLocaleString("pl-PL")}</span>
+        <span title="Polubienia komentarza (dane z YouTube — sortowanie i wyróżnienie dostępne, bez przycisku Lubię to)">
+          👍 {row.like_count.toLocaleString("pl-PL")}
+        </span>
         <span title="Liczba odpowiedzi w wątku">💬 {row.total_reply_count.toLocaleString("pl-PL")}</span>
+        <ViewerRatingBadge rating={row.viewer_rating} />
         <a href={youtubeCommentUrl(row.youtube_video_id, row.top_level_comment_id)} target="_blank" rel="noreferrer" className="textLink">
           Otwórz na YouTube →
         </a>
+        {showVideo ? (
+          <Link href={`/youtube/videos/${row.youtube_video_id}`} className="textLink">
+            Analityka filmu →
+          </Link>
+        ) : null}
       </div>
 
       {showVideo ? (
@@ -159,13 +203,15 @@ export function CommentThreadCard({
               {reply.is_own_reply ? (
                 <EditableOwnReply
                   reply={reply}
-                  onChanged={(updated) => setReplies((current) => current.map((r) => (r.platform_comment_id === updated.platform_comment_id ? updated : r)))}
+                  onChanged={(updated) => {
+                    const next = replies.map((r) => (r.platform_comment_id === updated.platform_comment_id ? updated : r));
+                    setReplies(next);
+                    refreshState(next);
+                  }}
                   onDeleted={() => {
-                    setReplies((current) => {
-                      const next = current.filter((r) => r.platform_comment_id !== reply.platform_comment_id);
-                      setAnswered(next.some((r) => r.is_own_reply));
-                      return next;
-                    });
+                    const next = replies.filter((r) => r.platform_comment_id !== reply.platform_comment_id);
+                    setReplies(next);
+                    refreshState(next);
                   }}
                 />
               ) : null}
@@ -179,8 +225,9 @@ export function CommentThreadCard({
           threadPlatformId={row.platform_thread_id}
           quickReplies={quickReplies}
           onSent={(reply) => {
-            setReplies((current) => [...current, reply]);
-            setAnswered(true);
+            const next = [...replies, reply];
+            setReplies(next);
+            refreshState(next);
           }}
         />
       ) : (

@@ -85,7 +85,7 @@ export default async function YoutubeVideoDetailPage({
     api.getSummary(),
     api.getStatus(),
     api.getVideos(),
-    api.getComments({ video: youtubeVideoId, sort: "newest" }),
+    api.getComments({ video: youtubeVideoId, sort: "priority" }),
     api.getQuickReplies(),
   ]);
 
@@ -438,8 +438,9 @@ export default async function YoutubeVideoDetailPage({
             <p className="eyebrow">SPOŁECZNOŚĆ</p>
             <h2>Komentarze</h2>
             <p className="muted">
-              {commentInbox.summary.total_visible} zaimportowanych · {commentInbox.summary.unanswered_count} bez odpowiedzi ·{" "}
-              {commentInbox.summary.questions_count} prawdopodobnych pytań
+              {commentInbox.summary.total_visible} zaimportowanych · {commentInbox.summary.awaiting_reply_count} wymaga odpowiedzi (
+              {commentInbox.summary.new_count} nowych, {commentInbox.summary.waiting_count} czeka) · {commentInbox.summary.resolved_count}{" "}
+              rozwiązanych · {commentInbox.summary.questions_count} prawdopodobnych pytań
             </p>
           </div>
           <Link className="textLink" href={`/youtube/community?video=${detail.youtube_video_id}`}>

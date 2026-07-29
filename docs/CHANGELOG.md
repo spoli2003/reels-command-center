@@ -3,6 +3,46 @@
 Entries are grouped by sprint, newest first. This changelog describes product/
 engineering outcomes, not individual commits.
 
+## Release 0.7.1 — Community UX & Conversation Engine (patch)
+
+Fixed a real correctness bug in 0.7.0: "answered" was computed as "any reply
+exists from the channel," which stayed true forever even after a viewer replied
+again — a conversation that genuinely needed attention could sit silently marked
+"answered." Replaced it with a proper conversation-state engine
+(`comment_intelligence.determine_conversation_state`, ADR-019) that evaluates the
+**last message in the complete thread**, never the top-level comment alone: 🟢
+**Resolved** (channel has the last word), 🟡 **Waiting** (channel replied before,
+but the viewer spoke again since), 🔵 **New** (channel has never replied here),
+⚪ **Closed** (moderated/unavailable). This is now the single state computation
+used everywhere — Community Inbox, Home, Video Detail, priority scoring, filters,
+and summary counters all call the same function.
+
+Live verification against the real connected channel surfaced a second, related
+bug before it shipped: a channel's own pinned top-level comment (a common
+creator practice — e.g. linking the full video under a Short) has zero replies,
+so it was incorrectly flagged "New / needs reply." Fixed by treating a
+self-authored top-level comment the same as an own reply when determining
+whether the channel has ever spoken in a thread.
+
+Priority scoring (Part 2) now uses the conversation state directly — Resolved
+and Closed conversations always score 0, and recency is measured from the
+thread's actual last activity (whichever side sent it), not just the original
+comment's age. Added percentile-based "highly liked" highlighting and read-only
+capture of YouTube's `viewerRating` (whether the channel owner already liked a
+comment on YouTube itself) — still no fake Like button; the official API simply
+doesn't support posting likes, only reading them (documented in
+`docs/KNOWN_ISSUES.md`).
+
+Filters gained explicit conversation-state options (New/Waiting/Resolved/
+Closed), an author filter, and two new sort orders (most-replied, recently
+active). Comment cards now show a conversation-state badge, an optional
+high-priority badge, and the viewer-rating badge, with tighter spacing and an
+"Otwórz analitykę filmu" shortcut alongside the existing YouTube link. Home
+gained "new questions," "most discussed video," and "recently active
+discussions" — still a summary, not a second inbox. Video Detail's comment
+summary now breaks down awaiting-reply vs. resolved instead of a single
+answered/unanswered count.
+
 ## Release 0.7.0 — YouTube Community Inbox
 
 RCC's first module that acts, not just analyzes: creators can now review,

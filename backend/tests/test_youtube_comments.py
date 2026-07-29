@@ -12,7 +12,7 @@ from app.db.session import SessionLocal
 from app.integrations.youtube.oauth import has_comments_scope
 from app.models.comments import YoutubeComment, YoutubeCommentThread
 from app.models.integration import PlatformAccount, SyncRun, YoutubeChannel, YoutubeVideo
-from app.services.comment_intelligence import comment_priority_score, is_likely_question
+from app.services.comment_intelligence import ConversationState, comment_priority_score, determine_conversation_state, is_likely_question
 from app.services.youtube_comment_actions import CommentActionError, delete_reply, edit_reply, post_reply
 from app.services.youtube_comment_sync import CommentSyncAlreadyRunningError, sync_youtube_comments
 from app.services.youtube_comments_query import build_inbox_rows, filter_and_sort_rows
@@ -268,19 +268,58 @@ def test_likely_question_classification():
     assert not is_likely_question("")
 
 
-def test_unanswered_vs_answered_state():
+def test_conversation_state_matrix():
+    """Release 0.7.1 / Parts 1 & 9 — the exact four scenarios from the release
+    brief. Conversation state must be derived from the LAST message in the full
+    thread, never the top-level comment alone."""
     _, channel = _make_channel("comments-g", "Kanał G")
     _make_video(channel.id, "video-g1")
+    own = channel.youtube_channel_id  # "yt-comments-g"
+    t0, t1, t2, t3 = (
+        "2026-07-29T10:00:00Z",
+        "2026-07-29T11:00:00Z",
+        "2026-07-29T12:00:00Z",
+        "2026-07-29T13:00:00Z",
+    )
+
     client = FakeCommentClient(
         threads_by_video={
             "video-g1": [
-                _thread_payload("thread-g1", "comment-g1", "Bez odpowiedzi"),
+                # User -> Channel -> Resolved
                 _thread_payload(
-                    "thread-g2",
-                    "comment-g2",
-                    "Z odpowiedzią",
-                    inline_replies=[_reply_payload("reply-g1", "comment-g2", "Dziękuję!", author_channel_id="yt-comments-g")],
+                    "thread-resolved",
+                    "comment-resolved",
+                    "Pytanie o film",
+                    published_at=t0,
                     total_reply_count=1,
+                    inline_replies=[_reply_payload("reply-resolved-1", "comment-resolved", "Dzięki!", published_at=t1, author_channel_id=own)],
+                ),
+                # User -> Channel -> User -> Waiting
+                _thread_payload(
+                    "thread-waiting",
+                    "comment-waiting",
+                    "Pierwsza wiadomość",
+                    published_at=t0,
+                    total_reply_count=2,
+                    inline_replies=[
+                        _reply_payload("reply-waiting-1", "comment-waiting", "Odpowiedź kanału", published_at=t1, author_channel_id=own),
+                        _reply_payload("reply-waiting-2", "comment-waiting", "Kolejne pytanie widza", published_at=t2, author_channel_id="viewer-1"),
+                    ],
+                ),
+                # User only -> New
+                _thread_payload("thread-new", "comment-new", "Nikt jeszcze nie odpowiedział"),
+                # User -> Channel -> User -> Channel -> Resolved
+                _thread_payload(
+                    "thread-resolved-again",
+                    "comment-resolved-again",
+                    "Długa wymiana",
+                    published_at=t0,
+                    total_reply_count=3,
+                    inline_replies=[
+                        _reply_payload("reply-ra-1", "comment-resolved-again", "Pierwsza odpowiedź", published_at=t1, author_channel_id=own),
+                        _reply_payload("reply-ra-2", "comment-resolved-again", "Dopytanie widza", published_at=t2, author_channel_id="viewer-1"),
+                        _reply_payload("reply-ra-3", "comment-resolved-again", "Druga odpowiedź", published_at=t3, author_channel_id=own),
+                    ],
                 ),
             ]
         }
@@ -288,15 +327,108 @@ def test_unanswered_vs_answered_state():
     db = SessionLocal()
     try:
         sync_youtube_comments(db, channel, client, mode="full")
-        rows = build_inbox_rows(db, channel.id)
+        rows = build_inbox_rows(db, channel.id, own)
         by_thread = {r["thread"].platform_thread_id: r for r in rows}
-        assert by_thread["thread-g1"]["is_answered"] is False
-        assert by_thread["thread-g2"]["is_answered"] is True
 
+        assert by_thread["thread-resolved"]["conversation_state"] == ConversationState.RESOLVED
+        assert by_thread["thread-waiting"]["conversation_state"] == ConversationState.WAITING
+        assert by_thread["thread-new"]["conversation_state"] == ConversationState.NEW
+        assert by_thread["thread-resolved-again"]["conversation_state"] == ConversationState.RESOLVED
+
+        resolved = filter_and_sort_rows(rows, quick="resolved")
+        assert {r["thread"].platform_thread_id for r in resolved} == {"thread-resolved", "thread-resolved-again"}
+        waiting = filter_and_sort_rows(rows, quick="waiting")
+        assert {r["thread"].platform_thread_id for r in waiting} == {"thread-waiting"}
+        new = filter_and_sort_rows(rows, quick="new")
+        assert {r["thread"].platform_thread_id for r in new} == {"thread-new"}
+
+        # "unanswered" convenience alias = new + waiting, never resolved/closed.
         unanswered = filter_and_sort_rows(rows, quick="unanswered")
-        assert {r["thread"].platform_thread_id for r in unanswered} == {"thread-g1"}
-        answered = filter_and_sort_rows(rows, quick="answered")
-        assert {r["thread"].platform_thread_id for r in answered} == {"thread-g2"}
+        assert {r["thread"].platform_thread_id for r in unanswered} == {"thread-waiting", "thread-new"}
+
+        # Resolved conversations are never prioritized (Part 2).
+        assert by_thread["thread-resolved"]["priority_score"] == 0.0
+        assert by_thread["thread-resolved-again"]["priority_score"] == 0.0
+        assert by_thread["thread-waiting"]["priority_score"] > 0.0
+        assert by_thread["thread-new"]["priority_score"] > 0.0
+    finally:
+        db.close()
+
+
+def test_self_authored_top_level_comment_is_resolved_not_new():
+    """Bug found via live verification (Release 0.7.1 / Part 8): a channel's own
+    pinned top-level comment (a common creator practice, e.g. linking the full
+    video) has zero replies, but must NOT be flagged "New / needs reply" — the
+    channel already has the last (and only) word."""
+    _, channel = _make_channel("comments-p", "Kanał P")
+    _make_video(channel.id, "video-p1")
+    own = channel.youtube_channel_id
+    client = FakeCommentClient(
+        threads_by_video={"video-p1": [_thread_payload("thread-pinned", "comment-pinned", "Pełny materiał tutaj: link", author_channel_id=own)]}
+    )
+    db = SessionLocal()
+    try:
+        sync_youtube_comments(db, channel, client, mode="full")
+        rows = build_inbox_rows(db, channel.id, own)
+        row = next(r for r in rows if r["thread"].platform_thread_id == "thread-pinned")
+        assert row["conversation_state"] == ConversationState.RESOLVED
+        assert row["priority_score"] == 0.0
+    finally:
+        db.close()
+
+
+def _thread_payload_with_likes(thread_id, comment_id, text, like_count):
+    payload = _thread_payload(thread_id, comment_id, text)
+    payload["snippet"]["topLevelComment"]["snippet"]["likeCount"] = like_count
+    return payload
+
+
+def test_like_sorting_and_highly_liked_highlighting():
+    """Release 0.7.1 / Part 3 & 9 — sorting by like count, and the percentile-based
+    "highly liked" highlight (never a fake Like button — see docs/DECISIONS.md)."""
+    _, channel = _make_channel("comments-n", "Kanał N")
+    _make_video(channel.id, "video-n1")
+    client = FakeCommentClient(
+        threads_by_video={
+            "video-n1": [
+                _thread_payload_with_likes("thread-low", "comment-n1", "Mało polubień", 1),
+                _thread_payload_with_likes("thread-mid", "comment-n2", "Średnio polubień", 5),
+                _thread_payload_with_likes("thread-high", "comment-n3", "Bardzo polubiony komentarz", 500),
+            ]
+        }
+    )
+    db = SessionLocal()
+    try:
+        sync_youtube_comments(db, channel, client, mode="full")
+        rows = build_inbox_rows(db, channel.id, channel.youtube_channel_id)
+
+        most_liked = filter_and_sort_rows(rows, sort="most_liked")
+        assert [r["thread"].platform_thread_id for r in most_liked] == ["thread-high", "thread-mid", "thread-low"]
+
+        by_thread = {r["thread"].platform_thread_id: r for r in rows}
+        assert by_thread["thread-high"]["is_highly_liked"] is True
+        assert by_thread["thread-low"]["is_highly_liked"] is False
+
+        highly_liked = filter_and_sort_rows(rows, quick="highly_liked")
+        assert {r["thread"].platform_thread_id for r in highly_liked} == {"thread-high"}
+    finally:
+        db.close()
+
+
+def test_viewer_rating_captured_read_only():
+    """Part 3 — viewerRating is captured from the API as read-only data, never a
+    fake Like button or a value RCC invents itself."""
+    _, channel = _make_channel("comments-o", "Kanał O")
+    _make_video(channel.id, "video-o1")
+    payload = _thread_payload("thread-o1", "comment-o1", "Komentarz polubiony przez kanał")
+    payload["snippet"]["topLevelComment"]["snippet"]["viewerRating"] = "like"
+    client = FakeCommentClient(threads_by_video={"video-o1": [payload]})
+
+    db = SessionLocal()
+    try:
+        sync_youtube_comments(db, channel, client, mode="full")
+        thread = db.scalar(select(YoutubeCommentThread).where(YoutubeCommentThread.platform_thread_id == "thread-o1"))
+        assert thread.viewer_rating == "like"
     finally:
         db.close()
 
@@ -411,14 +543,33 @@ def test_has_comments_scope():
 
 def test_comment_priority_score_ranks_unanswered_questions_highest():
     now = datetime(2026, 7, 29, tzinfo=timezone.utc)
-    unanswered_question = comment_priority_score(
-        is_unanswered=True, is_question=True, published_at=now, like_count=5, reply_count=0, now=now
+    waiting_question = comment_priority_score(
+        state=ConversationState.WAITING, is_question=True, last_message_at=now, like_count=5, reply_count=0, now=now
     )
-    unanswered_statement = comment_priority_score(
-        is_unanswered=True, is_question=False, published_at=now, like_count=5, reply_count=0, now=now
+    waiting_statement = comment_priority_score(
+        state=ConversationState.WAITING, is_question=False, last_message_at=now, like_count=5, reply_count=0, now=now
     )
-    answered_question = comment_priority_score(
-        is_unanswered=False, is_question=True, published_at=now, like_count=5, reply_count=0, now=now
+    new_question = comment_priority_score(
+        state=ConversationState.NEW, is_question=True, last_message_at=now, like_count=5, reply_count=0, now=now
     )
-    assert unanswered_question > unanswered_statement
-    assert answered_question == 0.0
+    resolved_question = comment_priority_score(
+        state=ConversationState.RESOLVED, is_question=True, last_message_at=now, like_count=5, reply_count=0, now=now
+    )
+    closed_question = comment_priority_score(
+        state=ConversationState.CLOSED, is_question=True, last_message_at=now, like_count=5, reply_count=0, now=now
+    )
+    assert waiting_question > waiting_statement
+    assert new_question > 0.0
+    assert resolved_question == 0.0
+    assert closed_question == 0.0
+
+
+def test_determine_conversation_state_priority_order():
+    # Moderated/closed wins even if the channel replied.
+    assert determine_conversation_state(has_own_reply=True, last_message_is_own=True, is_moderated=True) == ConversationState.CLOSED
+    # No reply ever from the channel -> New, regardless of who's "last" (there's only one message).
+    assert determine_conversation_state(has_own_reply=False, last_message_is_own=False, is_moderated=False) == ConversationState.NEW
+    # Channel replied and has the last word -> Resolved.
+    assert determine_conversation_state(has_own_reply=True, last_message_is_own=True, is_moderated=False) == ConversationState.RESOLVED
+    # Channel replied before, but the viewer spoke again since -> Waiting.
+    assert determine_conversation_state(has_own_reply=True, last_message_is_own=False, is_moderated=False) == ConversationState.WAITING

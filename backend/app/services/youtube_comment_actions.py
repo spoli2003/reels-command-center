@@ -81,6 +81,7 @@ def post_reply(db: Session, channel: YoutubeChannel, client: YoutubeClient, thre
         updated_at=parse_published_at(snippet.get("updatedAt") or snippet["publishedAt"]),
         is_own_reply=True,
         moderation_status=snippet.get("moderationStatus", "published"),
+        viewer_rating=snippet.get("viewerRating"),
         imported_at=now,
         last_synced_at=now,
     )

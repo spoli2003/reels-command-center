@@ -26,6 +26,16 @@ export default async function Home() {
     api.getComments({ sort: "newest" }),
   ]);
   const newestComment = commentInbox.threads[0] ?? null;
+  const newQuestions = commentInbox.threads.filter(
+    (thread) => thread.is_likely_question && (thread.conversation_state === "new" || thread.conversation_state === "waiting"),
+  );
+  const recentlyActive = [...commentInbox.threads].sort((a, b) => +new Date(b.last_message_at) - +new Date(a.last_message_at)).slice(0, 3);
+  const discussionCountByVideo = new Map<string, { title: string; count: number }>();
+  for (const thread of commentInbox.threads) {
+    const existing = discussionCountByVideo.get(thread.youtube_video_id);
+    discussionCountByVideo.set(thread.youtube_video_id, { title: thread.video_title, count: (existing?.count ?? 0) + 1 });
+  }
+  const mostDiscussedVideo = [...discussionCountByVideo.entries()].sort((a, b) => b[1].count - a[1].count)[0] ?? null;
 
   return (
     <AppShell active="/">
@@ -108,21 +118,44 @@ export default async function Home() {
             </div>
             <StatsGrid>
               <StatCard
-                label="Bez odpowiedzi"
-                value={String(commentInbox.summary.unanswered_count)}
-                hint="wymagają uwagi"
-                featured={commentInbox.summary.unanswered_count > 0}
+                label="Wymagają odpowiedzi"
+                value={String(commentInbox.summary.awaiting_reply_count)}
+                hint={`${commentInbox.summary.new_count} nowych · ${commentInbox.summary.waiting_count} czeka`}
+                featured={commentInbox.summary.awaiting_reply_count > 0}
               />
-              <StatCard label="Prawdopodobne pytania" value={String(commentInbox.summary.questions_count)} hint="wykryte heurystycznie" />
+              <StatCard label="Nowe pytania" value={String(newQuestions.length)} hint="bez odpowiedzi kanału" />
+              <StatCard label="Rozwiązane" value={String(commentInbox.summary.resolved_count)} hint="ostatnie słowo należy do kanału" />
               <StatCard label="Ostatnie (7 dni)" value={String(commentInbox.summary.recent_count)} hint="nowe komentarze" />
             </StatsGrid>
-            {newestComment ? (
+
+            {mostDiscussedVideo ? (
               <p className="muted" style={{ marginTop: 14 }}>
-                Najnowszy komentarz: „{newestComment.text_original.length > 90 ? `${newestComment.text_original.slice(0, 89)}…` : newestComment.text_original}
-                ” — {newestComment.author_display_name} pod filmem{" "}
-                <Link href={`/youtube/videos/${newestComment.youtube_video_id}`}>{newestComment.video_title}</Link>.
+                Najwięcej komentarzy zebrał film{" "}
+                <Link href={`/youtube/videos/${mostDiscussedVideo[0]}`}>{mostDiscussedVideo[1].title}</Link> ({mostDiscussedVideo[1].count}{" "}
+                {mostDiscussedVideo[1].count === 1 ? "wątek" : "wątków"}).
               </p>
-            ) : (
+            ) : null}
+
+            {recentlyActive.length > 0 ? (
+              <div style={{ marginTop: 14 }}>
+                <p className="muted" style={{ marginBottom: 8 }}>
+                  Ostatnio aktywne dyskusje:
+                </p>
+                <div className="dailyBriefLinks">
+                  {recentlyActive.map((thread) => (
+                    <p key={thread.platform_thread_id}>
+                      {thread.conversation_state === "waiting" ? "🟡" : thread.conversation_state === "new" ? "🔵" : "🟢"}{" "}
+                      <Link href={`/youtube/videos/${thread.youtube_video_id}`}>
+                        {thread.text_original.length > 70 ? `${thread.text_original.slice(0, 69)}…` : thread.text_original}
+                      </Link>{" "}
+                      — {thread.author_display_name}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {newestComment ? null : (
               <p className="muted" style={{ marginTop: 14 }}>
                 Brak zaimportowanych komentarzy — uruchom synchronizację komentarzy w Skrzynce komentarzy.
               </p>

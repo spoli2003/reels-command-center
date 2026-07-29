@@ -102,6 +102,7 @@ def _upsert_thread(db: Session, video: YoutubeVideo, raw_thread: dict) -> tuple[
     thread.total_reply_count = snippet.get("totalReplyCount", 0)
     thread.moderation_status = top_snippet.get("moderationStatus", "published")
     thread.can_reply = snippet.get("canReply", True)
+    thread.viewer_rating = top_snippet.get("viewerRating")
     thread.last_synced_at = now
     if is_new:
         thread.imported_at = now
@@ -135,6 +136,7 @@ def _upsert_reply(db: Session, thread: YoutubeCommentThread, raw_comment: dict, 
     comment.updated_at = parse_published_at(snippet.get("updatedAt") or snippet["publishedAt"])
     comment.is_own_reply = bool(own_channel_youtube_id) and author_channel_id == own_channel_youtube_id
     comment.moderation_status = snippet.get("moderationStatus", "published")
+    comment.viewer_rating = snippet.get("viewerRating")
     comment.last_synced_at = now
     if is_new:
         comment.imported_at = now

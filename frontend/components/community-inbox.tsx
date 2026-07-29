@@ -17,17 +17,23 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 const QUICK_FILTERS: { key: CommentQuickFilter; label: string }[] = [
   { key: "all", label: "Wszystkie" },
-  { key: "unanswered", label: "Bez odpowiedzi" },
-  { key: "answered", label: "Odpowiedziane" },
+  { key: "waiting", label: "🟡 Czekają" },
+  { key: "new", label: "🔵 Nowe" },
+  { key: "resolved", label: "🟢 Rozwiązane" },
+  { key: "closed", label: "⚪ Zamknięte" },
   { key: "questions", label: "Pytania" },
   { key: "recent", label: "Ostatnie" },
   { key: "with_replies", label: "Z odpowiedziami" },
+  { key: "highly_liked", label: "Wysoko oceniane" },
 ];
 
 const SORT_OPTIONS: { key: CommentSort; label: string }[] = [
   { key: "newest", label: "Najnowsze" },
   { key: "oldest", label: "Najstarsze" },
+  { key: "recently_active", label: "Ostatnia aktywność" },
   { key: "most_liked", label: "Najbardziej polubione" },
+  { key: "most_replies", label: "Najwięcej odpowiedzi" },
+  { key: "priority", label: "Priorytet" },
 ];
 
 const SYNC_STATUS_LABELS: Record<string, string> = { success: "Udana", partial: "Częściowo udana", failed: "Nieudana" };
@@ -43,6 +49,7 @@ export function CommunityInbox({ videos, initialQuickReplies }: { videos: Youtub
 
   const [quick, setQuick] = useState<CommentQuickFilter>("all");
   const [videoFilter, setVideoFilter] = useState("");
+  const [authorFilter, setAuthorFilter] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<CommentSort>("newest");
 
@@ -52,6 +59,7 @@ export function CommunityInbox({ videos, initialQuickReplies }: { videos: Youtub
       const params = new URLSearchParams();
       if (quick !== "all") params.set("quick", quick);
       if (videoFilter) params.set("video", videoFilter);
+      if (authorFilter) params.set("author", authorFilter);
       if (search) params.set("q", search);
       params.set("sort", sort);
       const [inboxResponse, statusResponse] = await Promise.all([
@@ -71,7 +79,7 @@ export function CommunityInbox({ videos, initialQuickReplies }: { videos: Youtub
     setLoading(true);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quick, videoFilter, search, sort]);
+  }, [quick, videoFilter, authorFilter, search, sort]);
 
   async function synchronize(mode: "incremental" | "full") {
     setSyncing(true);
@@ -112,14 +120,24 @@ export function CommunityInbox({ videos, initialQuickReplies }: { videos: Youtub
 
       <section className="statsGrid">
         <article className="metricCard featured">
-          <span>Widoczne komentarze</span>
-          <strong>{inbox?.summary.total_visible ?? 0}</strong>
-          <small>w aktualnym filtrze</small>
+          <span>Wymagają uwagi</span>
+          <strong>{inbox?.summary.awaiting_reply_count ?? 0}</strong>
+          <small>nowe + czekające na odpowiedź</small>
         </article>
         <article className="metricCard">
-          <span>Bez odpowiedzi</span>
-          <strong>{inbox?.summary.unanswered_count ?? 0}</strong>
-          <small>wymagają uwagi</small>
+          <span>🟡 Czekają</span>
+          <strong>{inbox?.summary.waiting_count ?? 0}</strong>
+          <small>widz odpowiedział ponownie</small>
+        </article>
+        <article className="metricCard">
+          <span>🔵 Nowe</span>
+          <strong>{inbox?.summary.new_count ?? 0}</strong>
+          <small>brak odpowiedzi kanału</small>
+        </article>
+        <article className="metricCard">
+          <span>🟢 Rozwiązane</span>
+          <strong>{inbox?.summary.resolved_count ?? 0}</strong>
+          <small>ostatnie słowo należy do kanału</small>
         </article>
         <article className="metricCard">
           <span>Prawdopodobne pytania</span>
@@ -198,6 +216,12 @@ export function CommunityInbox({ videos, initialQuickReplies }: { videos: Youtub
         <div className="filterBar">
           <div className="filterBarRow">
             <input className="searchInput" placeholder="Szukaj po treści lub autorze…" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <input
+              className="viewsRangeInput"
+              placeholder="Filtruj po autorze…"
+              value={authorFilter}
+              onChange={(event) => setAuthorFilter(event.target.value)}
+            />
             <select value={videoFilter} onChange={(event) => setVideoFilter(event.target.value)}>
               <option value="">Wszystkie filmy</option>
               {videoOptions.map((video) => (

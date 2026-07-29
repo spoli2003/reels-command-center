@@ -228,3 +228,28 @@ sync doesn't have a "how far back to look" dimension the way comment threads do.
 **Consequences:** A future platform's comment/message sync (Facebook comments,
 Instagram DMs) should follow this same shape rather than reinventing dedup/overlap
 handling from scratch.
+
+### ADR-019 — Conversation state is derived from the LAST message in the full thread
+**Context:** Release 0.7.1 bugfix. The original 0.7.0 "answered" logic was `any
+reply exists from the channel` — which stayed `True` forever even after a viewer
+replied again following the channel's answer, silently hiding conversations that
+still needed attention. Live verification against the real connected channel also
+found a second bug from the same root cause: a channel's own pinned top-level
+comment (a common creator practice — e.g. linking the full video under a Short)
+has zero replies, so it was flagged "New / needs reply" even though the channel
+already has the only word in that thread.
+**Decision:** `comment_intelligence.determine_conversation_state` is the ONE
+function every consumer calls (Inbox, Home, Video Detail, priority scoring,
+filters/summaries) — never a locally re-derived binary answered/unanswered flag.
+Priority order: **Closed** (moderated) → **New** (the channel has never spoken in
+this thread, counting BOTH its own replies AND a self-authored top-level comment)
+→ **Resolved** (the channel's message is the most recent in the full thread) →
+**Waiting** (the channel spoke before, but the viewer replied again since).
+Evaluation always considers the complete thread (top-level comment + every
+reply), never the top-level comment in isolation.
+**Consequences:** `comment_priority_score` takes the resulting `state` directly
+(never a raw boolean) and always scores Resolved/Closed as `0` — "never
+prioritize an already-resolved conversation" is enforced structurally, not by
+convention. Any future comment-adjacent feature (e.g. a Facebook Messenger-style
+inbox) should reuse this exact state machine rather than inventing a new
+answered/unanswered concept.

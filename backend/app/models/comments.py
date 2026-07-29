@@ -37,6 +37,10 @@ class YoutubeCommentThread(Base):
     total_reply_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     moderation_status: Mapped[str] = mapped_column(String(32), default="published", nullable=False)
     can_reply: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Read-only reflection of the connected channel's OWN like on this comment
+    # (YouTube's `viewerRating`, values "like"/"none") — the API has no "like
+    # count contributed by me" concept beyond this. Never a like button (Part 3).
+    viewer_rating: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
@@ -62,6 +66,7 @@ class YoutubeComment(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     is_own_reply: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     moderation_status: Mapped[str] = mapped_column(String(32), default="published", nullable=False)
+    viewer_rating: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 

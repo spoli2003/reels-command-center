@@ -165,6 +165,8 @@ export type YoutubeDataQualityReport = {
 
 // --- Community Inbox (Release 0.7.0) ----------------------------------------
 
+export type ConversationState = "new" | "waiting" | "resolved" | "closed";
+
 export type ReplyRead = {
   platform_comment_id: string;
   author_channel_id: string | null;
@@ -175,6 +177,7 @@ export type ReplyRead = {
   published_at: string;
   updated_at: string;
   is_own_reply: boolean;
+  viewer_rating: string | null;
 };
 
 export type CommentThreadRead = {
@@ -192,15 +195,22 @@ export type CommentThreadRead = {
   updated_at: string;
   total_reply_count: number;
   can_reply: boolean;
-  is_answered: boolean;
+  conversation_state: ConversationState;
+  last_message_at: string;
   is_likely_question: boolean;
+  is_highly_liked: boolean;
   priority_score: number;
+  viewer_rating: string | null;
   replies: ReplyRead[];
 };
 
 export type CommentInboxSummary = {
   total_visible: number;
-  unanswered_count: number;
+  new_count: number;
+  waiting_count: number;
+  resolved_count: number;
+  closed_count: number;
+  awaiting_reply_count: number;
   questions_count: number;
   recent_count: number;
   with_replies_count: number;
@@ -227,8 +237,8 @@ export type CommentSyncStatus = {
 
 export type QuickReplyTemplate = { id: number; text: string; position: number };
 
-export type CommentQuickFilter = "all" | "unanswered" | "answered" | "questions" | "recent" | "with_replies";
-export type CommentSort = "newest" | "oldest" | "most_liked" | "priority";
+export type CommentQuickFilter = "all" | "new" | "waiting" | "resolved" | "closed" | "questions" | "recent" | "with_replies" | "highly_liked";
+export type CommentSort = "newest" | "oldest" | "most_liked" | "most_replies" | "priority" | "recently_active";
 
 export type SupportingVideo = { youtube_video_id: string; title: string; thumbnail_url: string | null };
 
@@ -327,15 +337,26 @@ export function createYoutubeApi(baseUrl: string) {
     getDataQuality: () => getJson<YoutubeDataQualityReport | null>(`${prefix}/data-quality`, null),
     getIntelligence: () => getJson<IntelligenceReport | null>(`${prefix}/analytics/intelligence`, null),
     getStatus: () => getJson<YoutubeStatus | null>(`${prefix}/status`, null),
-    getComments: (params: { quick?: CommentQuickFilter; video?: string; q?: string; sort?: CommentSort } = {}) => {
+    getComments: (params: { quick?: CommentQuickFilter; video?: string; author?: string; q?: string; sort?: CommentSort } = {}) => {
       const search = new URLSearchParams();
       if (params.quick && params.quick !== "all") search.set("quick", params.quick);
       if (params.video) search.set("video", params.video);
+      if (params.author) search.set("author", params.author);
       if (params.q) search.set("q", params.q);
       if (params.sort) search.set("sort", params.sort);
       const qs = search.toString();
       return getJson<CommentInboxRead>(`${prefix}/comments${qs ? `?${qs}` : ""}`, {
-        summary: { total_visible: 0, unanswered_count: 0, questions_count: 0, recent_count: 0, with_replies_count: 0 },
+        summary: {
+          total_visible: 0,
+          new_count: 0,
+          waiting_count: 0,
+          resolved_count: 0,
+          closed_count: 0,
+          awaiting_reply_count: 0,
+          questions_count: 0,
+          recent_count: 0,
+          with_replies_count: 0,
+        },
         threads: [],
       });
     },

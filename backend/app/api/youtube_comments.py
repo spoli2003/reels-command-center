@@ -48,6 +48,21 @@ def _require_comments_scope(account) -> None:
         )
 
 
+def _reply_to_read(reply) -> ReplyRead:
+    return ReplyRead(
+        platform_comment_id=reply.platform_comment_id,
+        author_channel_id=reply.author_channel_id,
+        author_display_name=reply.author_display_name,
+        author_avatar_url=reply.author_avatar_url,
+        text_original=reply.text_original,
+        like_count=reply.like_count,
+        published_at=reply.published_at,
+        updated_at=reply.updated_at,
+        is_own_reply=reply.is_own_reply,
+        viewer_rating=getattr(reply, "viewer_rating", None),
+    )
+
+
 def _thread_to_read(row: dict) -> CommentThreadRead:
     thread = row["thread"]
     video = row["video"]
@@ -66,38 +81,29 @@ def _thread_to_read(row: dict) -> CommentThreadRead:
         updated_at=thread.updated_at,
         total_reply_count=thread.total_reply_count,
         can_reply=thread.can_reply,
-        is_answered=row["is_answered"],
+        conversation_state=row["conversation_state"].value,
+        last_message_at=row["last_message_at"],
         is_likely_question=row["is_likely_question"],
+        is_highly_liked=row["is_highly_liked"],
         priority_score=row["priority_score"],
-        replies=[
-            ReplyRead(
-                platform_comment_id=reply.platform_comment_id,
-                author_channel_id=reply.author_channel_id,
-                author_display_name=reply.author_display_name,
-                author_avatar_url=reply.author_avatar_url,
-                text_original=reply.text_original,
-                like_count=reply.like_count,
-                published_at=reply.published_at,
-                updated_at=reply.updated_at,
-                is_own_reply=reply.is_own_reply,
-            )
-            for reply in row["replies"]
-        ],
+        viewer_rating=thread.viewer_rating,
+        replies=[_reply_to_read(reply) for reply in row["replies"]],
     )
 
 
 @router.get("/comments", response_model=CommentInboxRead)
 def list_comments(
-    quick: Optional[str] = Query(None, description="unanswered|answered|questions|recent|with_replies"),
+    quick: Optional[str] = Query(None, description="new|waiting|resolved|closed|unanswered|answered|questions|recent|with_replies|highly_liked"),
     video: Optional[str] = Query(None, description="Filter by youtube_video_id"),
+    author: Optional[str] = Query(None, description="Filter by author display name substring"),
     q: Optional[str] = Query(None, description="Search comment text or author"),
-    sort: str = Query("newest", description="newest|oldest|most_liked|priority"),
+    sort: str = Query("newest", description="newest|oldest|most_liked|most_replies|priority|recently_active"),
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
 ):
     account, channel = _require_connected(db)
-    rows = build_inbox_rows(db, channel.id)
+    rows = build_inbox_rows(db, channel.id, channel.youtube_channel_id)
     summary = build_inbox_summary(rows)
 
     video_row_id = None
@@ -106,7 +112,7 @@ def list_comments(
         video_row_id = video_row.id if video_row else -1  # -1 never matches -> empty result for unknown video
 
     filtered = filter_and_sort_rows(
-        rows, quick=quick, video_id=video_row_id, search=q, date_from=date_from, date_to=date_to, sort=sort
+        rows, quick=quick, video_id=video_row_id, author=author, search=q, date_from=date_from, date_to=date_to, sort=sort
     )
     return CommentInboxRead(summary=summary, threads=[_thread_to_read(r) for r in filtered])
 
@@ -177,17 +183,7 @@ def reply_to_thread(thread_platform_id: str, payload: ReplyCreate, db: Session =
         raise HTTPException(403, str(exc)) from exc
     except HttpError as exc:
         raise HTTPException(502, f"YouTube odrzucił publikację odpowiedzi (status {exc.resp.status if exc.resp else '?'}).") from exc
-    return ReplyRead(
-        platform_comment_id=comment.platform_comment_id,
-        author_channel_id=comment.author_channel_id,
-        author_display_name=comment.author_display_name,
-        author_avatar_url=comment.author_avatar_url,
-        text_original=comment.text_original,
-        like_count=comment.like_count,
-        published_at=comment.published_at,
-        updated_at=comment.updated_at,
-        is_own_reply=comment.is_own_reply,
-    )
+    return _reply_to_read(comment)
 
 
 @router.put("/comments/{comment_platform_id}", response_model=ReplyRead)
@@ -202,17 +198,7 @@ def edit_own_reply(comment_platform_id: str, payload: ReplyUpdate, db: Session =
         raise HTTPException(403, str(exc)) from exc
     except HttpError as exc:
         raise HTTPException(502, f"YouTube odrzucił edycję odpowiedzi (status {exc.resp.status if exc.resp else '?'}).") from exc
-    return ReplyRead(
-        platform_comment_id=comment.platform_comment_id,
-        author_channel_id=comment.author_channel_id,
-        author_display_name=comment.author_display_name,
-        author_avatar_url=comment.author_avatar_url,
-        text_original=comment.text_original,
-        like_count=comment.like_count,
-        published_at=comment.published_at,
-        updated_at=comment.updated_at,
-        is_own_reply=comment.is_own_reply,
-    )
+    return _reply_to_read(comment)
 
 
 @router.delete("/comments/{comment_platform_id}", status_code=204)

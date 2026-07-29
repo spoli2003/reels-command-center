@@ -14,6 +14,7 @@ class ReplyRead(BaseModel):
     published_at: datetime
     updated_at: datetime
     is_own_reply: bool
+    viewer_rating: Optional[str] = None
 
 
 class CommentThreadRead(BaseModel):
@@ -31,15 +32,25 @@ class CommentThreadRead(BaseModel):
     updated_at: datetime
     total_reply_count: int
     can_reply: bool
-    is_answered: bool
+    # conversation_state: "new" | "waiting" | "resolved" | "closed" — see
+    # comment_intelligence.determine_conversation_state (ADR-019). Replaces the
+    # old, buggy is_answered field (Release 0.7.1 / Part 1).
+    conversation_state: str
+    last_message_at: datetime
     is_likely_question: bool
+    is_highly_liked: bool
     priority_score: float
+    viewer_rating: Optional[str] = None
     replies: list[ReplyRead]
 
 
 class CommentInboxSummary(BaseModel):
     total_visible: int
-    unanswered_count: int
+    new_count: int
+    waiting_count: int
+    resolved_count: int
+    closed_count: int
+    awaiting_reply_count: int
     questions_count: int
     recent_count: int
     with_replies_count: int
