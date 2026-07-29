@@ -17,13 +17,15 @@ Analytics       (derived metrics: views/day, engagement rate, ratios)
    ↓
 Creator Intelligence   (confidence-gated, explainable recommendations)
    ↓
+Community Inbox   (read/reply to comments — RCC's first layer that ACTS, not just analyzes)
+   ↓
 AI Engine       (not yet built — narrates the layers above, invents nothing)
    ↓
 CRM             (not yet built — links content performance to leads/clients)
 ```
 
-**Where this stands today:** everything from Platforms down through Creator
-Intelligence is implemented for YouTube. Workspace (multi-tenancy), AI Engine, and CRM
+**Where this stands today:** everything from Platforms down through Community
+Inbox is implemented for YouTube. Workspace (multi-tenancy), AI Engine, and CRM
 are future layers — see below and [TODO.md](./TODO.md).
 
 ### Workspace (future)
@@ -99,6 +101,48 @@ it converts `YoutubeVideo` + snapshot rows into `ContentItem`, calls the engine,
 re-attaches display fields (title, thumbnail) for the API response. A future
 Facebook/Instagram/TikTok adapter is the same shape — nothing under `intelligence/`
 would change.
+
+### Community Inbox (Release 0.7.0)
+
+RCC's first module that lets a creator act, not just read: reviewing, prioritizing,
+and replying to YouTube comments without leaving RCC.
+
+```
+backend/app/services/
+  youtube_comment_sync.py      quota-conscious thread/reply import (upsert-only)
+  youtube_comment_actions.py    post/edit/delete own replies (authorized server-side)
+  youtube_comments_query.py     Inbox filter/sort/summary (fetch once, filter in Python)
+  comment_intelligence.py       deterministic "likely question" + priority heuristics
+```
+
+**Sync strategy** (see ADR-018): videos published in the last 30 days sync on every
+run; older videos only every 4th run, or via an explicit manual full refresh —
+`commentThreads.list`/`comments.list` cost 1 quota unit per page, so this throttle
+is about avoiding wasted work, not quota exhaustion. Reuses `SyncRun` (see
+[DATABASE.md](./DATABASE.md)) with the same overlap-guard/stale-run-reclaim/
+per-video-savepoint pattern as video-metric sync.
+
+**Authorization** (Part 13): every reply/edit/delete request is checked
+server-side against the connected channel's own imported data — a thread or
+comment ID from the browser is never trusted at face value
+(`get_authorized_thread`/`get_own_reply` in `youtube_comment_actions.py`). Editing
+or deleting is only possible for a comment row with `is_own_reply=True`; a
+viewer's own comment can never be targeted, regardless of what the client sends.
+
+**Classification** (Part 8): `comment_intelligence.is_likely_question` is a fixed
+set of heuristics (question mark, Polish interrogative starters, clarification
+phrases) — no LLM, no ML, always presented with hedged wording ("Prawdopodobne
+pytanie"). `comment_priority_score` composes unanswered-status, question
+likelihood, recency, likes, and reply count into one explainable number — the same
+"deterministic, explainable, never asserts causation" style as
+`services/intelligence/`. This is intentionally a **separate** module from the
+platform-agnostic Creator Intelligence engine (comments aren't `ContentItem`s), not
+forced into that package.
+
+**Required OAuth scope**: `youtube.force-ssl` (see ADR-017) — a strict superset of
+the previous `youtube.readonly`. Existing connections must reconnect once;
+`has_comments_scope()` (`integrations/youtube/oauth.py`) is the one place this is
+checked.
 
 ### AI Engine (future)
 
@@ -178,8 +222,9 @@ the UI's sync panel including automatic-scheduler status and the next planned ru
 ## Integrations
 
 - **YouTube Data API v3** (`google-api-python-client` + `google-auth-oauthlib`, PKCE
-  OAuth flow). Provides channel/video metadata and `viewCount`/`likeCount`/
-  `commentCount` only.
+  OAuth flow, `youtube.force-ssl` scope since Release 0.7.0 — see ADR-017).
+  Provides channel/video metadata, `viewCount`/`likeCount`/`commentCount`, and
+  (since 0.7.0) comment threads/replies with read+write access.
 - **YouTube Analytics API** — not integrated. Shares, watch time, average view
   duration, CTR, impressions, traffic sources, and per-video subscriber attribution
   all require this separate API and different OAuth scopes. RCC is honest about this

@@ -18,12 +18,14 @@ function compact(value: number) {
 
 export default async function Home() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [summary, status, report, videos] = await Promise.all([
+  const [summary, status, report, videos, commentInbox] = await Promise.all([
     api.getSummary(),
     api.getStatus(),
     api.getIntelligence(),
     api.getVideos(),
+    api.getComments({ sort: "newest" }),
   ]);
+  const newestComment = commentInbox.threads[0] ?? null;
 
   return (
     <AppShell active="/">
@@ -92,6 +94,39 @@ export default async function Home() {
               />
             </StatsGrid>
             {report?.daily_brief.no_upload_warning ? <div className="alert">{report.daily_brief.no_upload_warning}</div> : null}
+          </section>
+
+          <section className="libraryPanel">
+            <div className="libraryHeading">
+              <div>
+                <p className="eyebrow">SPOŁECZNOŚĆ</p>
+                <h2>Czy są komentarze wymagające uwagi?</h2>
+              </div>
+              <Link className="textLink" href="/youtube/community">
+                Otwórz Skrzynkę komentarzy →
+              </Link>
+            </div>
+            <StatsGrid>
+              <StatCard
+                label="Bez odpowiedzi"
+                value={String(commentInbox.summary.unanswered_count)}
+                hint="wymagają uwagi"
+                featured={commentInbox.summary.unanswered_count > 0}
+              />
+              <StatCard label="Prawdopodobne pytania" value={String(commentInbox.summary.questions_count)} hint="wykryte heurystycznie" />
+              <StatCard label="Ostatnie (7 dni)" value={String(commentInbox.summary.recent_count)} hint="nowe komentarze" />
+            </StatsGrid>
+            {newestComment ? (
+              <p className="muted" style={{ marginTop: 14 }}>
+                Najnowszy komentarz: „{newestComment.text_original.length > 90 ? `${newestComment.text_original.slice(0, 89)}…` : newestComment.text_original}
+                ” — {newestComment.author_display_name} pod filmem{" "}
+                <Link href={`/youtube/videos/${newestComment.youtube_video_id}`}>{newestComment.video_title}</Link>.
+              </p>
+            ) : (
+              <p className="muted" style={{ marginTop: 14 }}>
+                Brak zaimportowanych komentarzy — uruchom synchronizację komentarzy w Skrzynce komentarzy.
+              </p>
+            )}
           </section>
 
           <section className="homeSplitGrid">
@@ -226,6 +261,10 @@ export default async function Home() {
               <Link className="quickActionCard" href="/youtube/intelligence">
                 <strong>💡 Co dalej?</strong>
                 <span>Rekomendacje oparte na Twoich danych</span>
+              </Link>
+              <Link className="quickActionCard" href="/youtube/community">
+                <strong>💬 Skrzynka komentarzy</strong>
+                <span>Przeglądaj i odpowiadaj na komentarze</span>
               </Link>
               <Link className="quickActionCard" href="/videos">
                 <strong>🎞️ Biblioteka filmów</strong>

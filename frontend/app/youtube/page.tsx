@@ -49,6 +49,7 @@ export default async function YoutubeDashboardPage() {
           { href: "/youtube", label: "Dashboard" },
           { href: "/youtube/compare", label: "Porównanie" },
           { href: "/youtube/intelligence", label: "Co dalej?" },
+          { href: "/youtube/community", label: "Komentarze" },
         ]}
       />
 

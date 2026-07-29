@@ -4,6 +4,37 @@ Grouped by timeframe, then by category. This is the working roadmap — see
 [ROADMAP.md](./ROADMAP.md) for the philosophy behind it and
 [CHANGELOG.md](./CHANGELOG.md) for what has already shipped.
 
+## Release 0.7.0 — YouTube Community Inbox (done, one action required)
+
+Shipped in full per the release brief — see [CHANGELOG.md](./CHANGELOG.md) for the
+detailed outcome (comment model, quota-conscious sync, Community Inbox, reply/edit/
+delete, quick-reply templates, question/priority heuristics, video-detail + Home
+integration). 74 backend tests pass, frontend build is clean.
+
+**Action required from the operator (cannot be completed by an AI session):**
+- [ ] **Reconnect the YouTube account** via the "Połącz ponownie" button (Home page
+      or the YouTube panel) to grant the new `youtube.force-ssl` scope. The
+      currently connected account was authorized before this release and does not
+      have comment read/write access yet (`GET /status` correctly reports
+      `comments_scope_granted: false`, `comments_reconnect_required: true`).
+      Reconnecting is safe and additive — it only refreshes the OAuth token/scopes
+      for the same channel; no analytics data, sync history, or settings are lost.
+- [ ] **After reconnecting**, run a real comment sync from the Community Inbox and
+      spot-check a few real threads, then decide whether to publish a real test
+      reply (this specific action — publishing publicly to a real viewer's
+      comment — was intentionally left for explicit operator approval, per the
+      release brief; everything else was implemented and verified without it).
+
+**Known follow-ups (not blockers, tracked honestly):**
+- [ ] "Double-submit protection" for replies (Part 6) is implemented as a UI-state
+      guard (composer disables while sending) rather than a backend idempotency
+      key — there's no natural request-level dedup for arbitrary reply text
+      against the real YouTube API. Revisit only if double-posting is observed in
+      practice.
+- [ ] No automated visual/responsive browser testing this release either (see the
+      same caveat under Sprint 5/6 below) — Community Inbox layouts follow the
+      existing 1100px/760px breakpoints but haven't been visually confirmed.
+
 ## Sprint 5 & 6 — Advanced Analytics + Historical Engine (done)
 
 Both sprints shipped in full — see [CHANGELOG.md](./CHANGELOG.md) for the detailed

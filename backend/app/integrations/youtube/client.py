@@ -48,6 +48,32 @@ class YoutubeClient:
             videos.extend(response.get("items", []))
         return videos
 
+    # --- Community Inbox (Release 0.7.0) ------------------------------------
+
+    def list_comment_threads_page(self, video_id: str, page_token: str | None = None) -> dict[str, Any]:
+        """One page (up to 100) of top-level comment threads for a video, each
+        including up to a few inline replies. Raises googleapiclient.errors.HttpError
+        with reason "commentsDisabled" if the video has comments turned off."""
+        return (
+            self.service.commentThreads()
+            .list(part="snippet,replies", videoId=video_id, maxResults=100, pageToken=page_token, textFormat="plainText", order="time")
+            .execute()
+        )
+
+    def list_replies_page(self, parent_id: str, page_token: str | None = None) -> dict[str, Any]:
+        """One page (up to 100) of replies under a top-level comment — used to
+        backfill replies commentThreads.list didn't include inline (Part 4)."""
+        return self.service.comments().list(part="snippet", parentId=parent_id, maxResults=100, pageToken=page_token, textFormat="plainText").execute()
+
+    def insert_reply(self, parent_id: str, text: str) -> dict[str, Any]:
+        return self.service.comments().insert(part="snippet", body={"snippet": {"parentId": parent_id, "textOriginal": text}}).execute()
+
+    def update_comment(self, comment_id: str, text: str) -> dict[str, Any]:
+        return self.service.comments().update(part="snippet", body={"id": comment_id, "snippet": {"textOriginal": text}}).execute()
+
+    def delete_comment(self, comment_id: str) -> None:
+        self.service.comments().delete(id=comment_id).execute()
+
 
 def credentials_from_tokens(access_token: str, refresh_token: str | None, client_id: str, client_secret: str, token_uri: str = "https://oauth2.googleapis.com/token") -> Any:
     from google.oauth2.credentials import Credentials

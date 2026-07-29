@@ -8,6 +8,7 @@ import { ChartCard } from "../../../../components/charts/chart-card";
 import { LineChartViz } from "../../../../components/charts/line-chart";
 import { AiSummaryPlaceholder } from "../../../../components/ai-summary-placeholder";
 import { ChannelBaselineView } from "../../../../components/channel-baseline";
+import { CommentThreadCard } from "../../../../components/comment-thread-card";
 import { CopyLinkButton } from "../../../../components/copy-link-button";
 import { ExpandableDescription } from "../../../../components/expandable-description";
 import { ExternalLink, youtubeWatchUrl } from "../../../../components/external-link";
@@ -78,12 +79,14 @@ export default async function YoutubeVideoDetailPage({
   const { youtubeVideoId } = await params;
   const { from } = await searchParams;
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [detail, history, summary, status, allVideosRaw] = await Promise.all([
+  const [detail, history, summary, status, allVideosRaw, commentInbox, quickReplies] = await Promise.all([
     api.getVideoDetail(youtubeVideoId),
     api.getVideoHistory(youtubeVideoId),
     api.getSummary(),
     api.getStatus(),
     api.getVideos(),
+    api.getComments({ video: youtubeVideoId, sort: "newest" }),
+    api.getQuickReplies(),
   ]);
 
   if (!detail) notFound();
@@ -168,6 +171,7 @@ export default async function YoutubeVideoDetailPage({
           { href: "/youtube", label: "Dashboard" },
           { href: "/youtube/compare", label: "Porównanie" },
           { href: "/youtube/intelligence", label: "Co dalej?" },
+          { href: "/youtube/community", label: "Komentarze" },
         ]}
       />
 
@@ -426,6 +430,34 @@ export default async function YoutubeVideoDetailPage({
           </div>
         </div>
         <InsightsList insights={insights} />
+      </section>
+
+      <section className="libraryPanel">
+        <div className="libraryHeading">
+          <div>
+            <p className="eyebrow">SPOŁECZNOŚĆ</p>
+            <h2>Komentarze</h2>
+            <p className="muted">
+              {commentInbox.summary.total_visible} zaimportowanych · {commentInbox.summary.unanswered_count} bez odpowiedzi ·{" "}
+              {commentInbox.summary.questions_count} prawdopodobnych pytań
+            </p>
+          </div>
+          <Link className="textLink" href={`/youtube/community?video=${detail.youtube_video_id}`}>
+            Otwórz w Skrzynce komentarzy →
+          </Link>
+        </div>
+        {commentInbox.threads.length === 0 ? (
+          <div className="emptyState">
+            <h3>Brak zaimportowanych komentarzy</h3>
+            <p>Uruchom synchronizację komentarzy w Skrzynce komentarzy, aby zobaczyć je tutaj.</p>
+          </div>
+        ) : (
+          <div className="commentList">
+            {commentInbox.threads.slice(0, 3).map((row) => (
+              <CommentThreadCard key={row.platform_thread_id} row={row} quickReplies={quickReplies} showVideo={false} />
+            ))}
+          </div>
+        )}
       </section>
 
       <AiSummaryPlaceholder />

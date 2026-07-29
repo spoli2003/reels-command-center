@@ -42,6 +42,7 @@ export default async function CreatorIntelligencePage() {
           { href: "/youtube", label: "Dashboard" },
           { href: "/youtube/compare", label: "Porównanie" },
           { href: "/youtube/intelligence", label: "Co dalej?" },
+          { href: "/youtube/community", label: "Komentarze" },
         ]}
       />
 

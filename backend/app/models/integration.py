@@ -109,3 +109,9 @@ class SyncRun(Base):
     snapshots_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     snapshots_deduplicated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     videos_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Comment-sync-specific counts (Release 0.7.0, platform="youtube_comments" rows
+    # only) — reusing this same table/model as the ONE source of truth for every
+    # sync type, discriminated by `platform`, rather than a parallel table.
+    threads_discovered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    comments_imported: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    replies_imported: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

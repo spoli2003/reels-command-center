@@ -24,7 +24,7 @@ done — no matter how complete the underlying data model is.
 
 | Platform | Status | Notes |
 |---|---|---|
-| YouTube | Live | OAuth (Data API v3), full sync, analytics, Creator Intelligence |
+| YouTube | Live | OAuth (Data API v3), full sync, analytics, Creator Intelligence, Community Inbox (comments) |
 | Facebook | Planned | No integration work started |
 | Instagram | Planned | No integration work started |
 | TikTok | Planned | No integration work started |
@@ -70,7 +70,10 @@ confidence-gated recommendations, structured per-video metadata. See
 | 3 | Historical engine (planned, not implemented) | A full plan was produced (idempotent snapshot engine, concurrency guard, scheduler) but development moved to Sprint 4 before it was approved. The one piece that *did* ship — per-run channel snapshots (`YoutubeChannelSnapshot`) — landed as part of Sprint 4's subscriber-history work. The scheduler and snapshot-deduplication guarantees remain open — see [TODO.md](./TODO.md). |
 | 4 | Creator Intelligence engine | Platform-agnostic recommendation engine (`services/intelligence/`): daily brief, winning/attention videos, topic clustering, publishing patterns, follow-up opportunities, title-pattern analysis — all confidence-gated and explainable. New `/youtube/intelligence` page. |
 | 4.1 | Product polish | Home page and Library repurposed to read real YouTube data instead of the empty unified engine; removed low-value charts (scatter, upload-frequency); made sync effects visible (duration, counts, errors) after discovering sync worked but gave no feedback. |
-| 5 | Advanced analytics & usability | Click-to-sort tables, richer filtering (min/max views, quick presets), video prev/next navigation, honest "not available" metrics card, CSV export from the comparison page, expanded performance labels, and structured per-video metadata in preparation for the future AI layer. In progress — see [TODO.md](./TODO.md) for what's shipped vs. remaining. |
+| 5 | Advanced analytics & usability | Click-to-sort tables, richer filtering (min/max views, quick presets), video prev/next navigation, honest "not available" metrics card, CSV export from the comparison page, expanded performance labels, and structured per-video metadata in preparation for the future AI layer. |
+| 6 | Historical analytics engine | Idempotent, quota-conscious, crash-tolerant sync (overlap guard, stale-run reclaim, per-video fault isolation), an in-process automatic scheduler, age-anchored history bucketing (day/week/month, never raw sync timestamps), channel-wide history, and a data-quality audit. |
+| 0.6.1 | Synchronization consistency (patch) | Fixed a real bug where different pages could show different "last synchronization" timestamps — `GET /status` is now the single source of truth everywhere, with a shared `<SyncStatusLine>` component and `router.refresh()` after sync. |
+| 0.7.0 | YouTube Community Inbox | RCC's first module that acts, not just analyzes: review, prioritize, and reply to YouTube comments without leaving RCC. Deterministic (no LLM) likely-question detection and priority scoring, quota-conscious comment sync, own-reply edit/delete with server-side authorization, quick-reply templates, and Home/Video-Detail integration. Requires a one-time OAuth reconnect (new `youtube.force-ssl` scope) for accounts connected before this release. |
 
 ## Definition of Done
 

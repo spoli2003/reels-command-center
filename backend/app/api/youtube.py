@@ -8,14 +8,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.integrations.youtube.client import YoutubeClient, credentials_from_tokens
-from app.integrations.youtube.oauth import build_flow, load_client_secrets
+from app.integrations.youtube.client import YoutubeClient
+from app.integrations.youtube.oauth import build_flow, has_comments_scope
 from app.models.integration import PlatformAccount, SyncRun, YoutubeMetricSnapshot, YoutubeVideo
 from app.schemas.integration import SyncResult, YoutubeStatus, YoutubeVideoRead
 from app.schemas.youtube_analytics import ChannelHistoryRead, DataQualityReport, VideoDetailRead, VideoHistoryRead
 from app.services import youtube_scheduler
-from app.services.token_crypto import decrypt_token, encrypt_token
+from app.services.token_crypto import encrypt_token
 from app.services.youtube_analytics import get_channel, get_channel_history, get_video_detail, get_video_history
+from app.services.youtube_client_factory import build_youtube_client
 from app.services.youtube_data_quality import audit_youtube_data_quality
 from app.services.youtube_intelligence_adapter import compute_all_video_metadata, get_video_history_buckets
 from app.services.youtube_sync import SyncAlreadyRunningError, sync_youtube
@@ -40,6 +41,7 @@ def status(db: Session = Depends(get_db)):
 
     settings_ = get_settings()
     scheduler_enabled = settings_.youtube_sync_enabled
+    comments_scope_granted = has_comments_scope(account.scopes) if account else False
     return YoutubeStatus(
         configured=configured,
         connected=account is not None,
@@ -48,6 +50,8 @@ def status(db: Session = Depends(get_db)):
         last_synced_at=channel.synced_at if channel else None,
         video_count=video_count,
         message="Gotowe do połączenia" if configured and not account else ("Kanał połączony" if account else "Dodaj plik OAuth i klucz szyfrowania"),
+        comments_scope_granted=comments_scope_granted,
+        comments_reconnect_required=account is not None and not comments_scope_granted,
         last_sync_status=last_run.status if last_run else None,
         last_sync_duration_seconds=duration,
         last_sync_videos_discovered=last_run.videos_discovered if last_run else None,
@@ -121,16 +125,9 @@ def sync(db: Session = Depends(get_db)):
     account = db.scalar(select(PlatformAccount).where(PlatformAccount.platform == "youtube"))
     if account is None:
         raise HTTPException(409, "Najpierw połącz konto YouTube")
-    data = load_client_secrets(settings.client_secrets_path)
-    credentials = credentials_from_tokens(
-        decrypt_token(account.access_token_encrypted, settings.token_encryption_key),
-        decrypt_token(account.refresh_token_encrypted, settings.token_encryption_key) if account.refresh_token_encrypted else None,
-        data["client_id"],
-        data["client_secret"],
-        data.get("token_uri", "https://oauth2.googleapis.com/token"),
-    )
+    client = build_youtube_client(account, settings)
     try:
-        channel, imported = sync_youtube(db, account, YoutubeClient(credentials))
+        channel, imported = sync_youtube(db, account, client)
     except SyncAlreadyRunningError as exc:
         raise HTTPException(409, str(exc)) from exc
     return SyncResult(imported_videos=imported, channel_title=channel.title, synced_at=channel.synced_at or datetime.now(timezone.utc))

@@ -34,6 +34,8 @@ export type YoutubeStatus = {
   automatic_sync_interval_hours: number | null;
   automatic_sync_next_at: string | null;
   automatic_sync_note: string;
+  comments_scope_granted: boolean;
+  comments_reconnect_required: boolean;
 };
 
 export type YoutubeVideoRow = {
@@ -161,6 +163,73 @@ export type YoutubeDataQualityReport = {
   is_clean: boolean;
 };
 
+// --- Community Inbox (Release 0.7.0) ----------------------------------------
+
+export type ReplyRead = {
+  platform_comment_id: string;
+  author_channel_id: string | null;
+  author_display_name: string;
+  author_avatar_url: string | null;
+  text_original: string;
+  like_count: number;
+  published_at: string;
+  updated_at: string;
+  is_own_reply: boolean;
+};
+
+export type CommentThreadRead = {
+  platform_thread_id: string;
+  youtube_video_id: string;
+  video_title: string;
+  video_thumbnail_url: string | null;
+  top_level_comment_id: string;
+  author_channel_id: string | null;
+  author_display_name: string;
+  author_avatar_url: string | null;
+  text_original: string;
+  like_count: number;
+  published_at: string;
+  updated_at: string;
+  total_reply_count: number;
+  can_reply: boolean;
+  is_answered: boolean;
+  is_likely_question: boolean;
+  priority_score: number;
+  replies: ReplyRead[];
+};
+
+export type CommentInboxSummary = {
+  total_visible: number;
+  unanswered_count: number;
+  questions_count: number;
+  recent_count: number;
+  with_replies_count: number;
+};
+
+export type CommentInboxRead = {
+  summary: CommentInboxSummary;
+  threads: CommentThreadRead[];
+};
+
+export type CommentSyncStatus = {
+  last_synced_at: string | null;
+  last_sync_status: string | null;
+  last_sync_duration_seconds: number | null;
+  last_sync_threads_discovered: number | null;
+  last_sync_comments_imported: number | null;
+  last_sync_replies_imported: number | null;
+  last_sync_videos_failed: number | null;
+  last_sync_error: string | null;
+  automatic_sync_enabled: boolean;
+  automatic_sync_next_at: string | null;
+  comments_scope_granted: boolean;
+};
+
+export type QuickReplyTemplate = { id: number; text: string; position: number };
+
+export type CommentQuickFilter = "all" | "unanswered" | "answered" | "questions" | "recent" | "with_replies";
+export type CommentSort = "newest" | "oldest" | "most_liked" | "priority";
+
 export type SupportingVideo = { youtube_video_id: string; title: string; thumbnail_url: string | null };
 
 export type Confidence = "low" | "medium" | "high";
@@ -258,5 +327,19 @@ export function createYoutubeApi(baseUrl: string) {
     getDataQuality: () => getJson<YoutubeDataQualityReport | null>(`${prefix}/data-quality`, null),
     getIntelligence: () => getJson<IntelligenceReport | null>(`${prefix}/analytics/intelligence`, null),
     getStatus: () => getJson<YoutubeStatus | null>(`${prefix}/status`, null),
+    getComments: (params: { quick?: CommentQuickFilter; video?: string; q?: string; sort?: CommentSort } = {}) => {
+      const search = new URLSearchParams();
+      if (params.quick && params.quick !== "all") search.set("quick", params.quick);
+      if (params.video) search.set("video", params.video);
+      if (params.q) search.set("q", params.q);
+      if (params.sort) search.set("sort", params.sort);
+      const qs = search.toString();
+      return getJson<CommentInboxRead>(`${prefix}/comments${qs ? `?${qs}` : ""}`, {
+        summary: { total_visible: 0, unanswered_count: 0, questions_count: 0, recent_count: 0, with_replies_count: 0 },
+        threads: [],
+      });
+    },
+    getCommentSyncStatus: () => getJson<CommentSyncStatus | null>(`${prefix}/comments/sync-status`, null),
+    getQuickReplies: () => getJson<QuickReplyTemplate[]>(`${prefix}/quick-replies`, []),
   };
 }

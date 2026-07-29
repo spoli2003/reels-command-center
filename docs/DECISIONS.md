@@ -195,3 +195,36 @@ the server for fresh data instead of a cached RSC payload. Any future page that
 needs to show sync state must reuse `<SyncStatusLine>` + `GET /status` — adding a
 new independent `last_synced_at` read anywhere is the exact regression this ADR
 exists to prevent.
+
+### ADR-017 — `youtube.force-ssl` is the OAuth scope for comment read/write
+**Context:** Release 0.7.0's Community Inbox needs to read and post YouTube
+comments. The existing scopes (`youtube.readonly`, `yt-analytics.readonly`) permit
+neither.
+**Decision:** Request `https://www.googleapis.com/auth/youtube.force-ssl` (replacing
+`youtube.readonly`, which it is a strict superset of) instead of inventing a
+narrower custom scope combination. This is the least-privilege *official* scope
+that permits posting/editing/deleting comments — there is no separate
+"comments-only" scope YouTube offers.
+**Consequences:** Every account connected before this release must reconnect once
+to grant the new scope (the existing OAuth callback already upserts by channel ID,
+so this never loses analytics data or sync history — see `api/youtube.py::callback`).
+`YoutubeStatus.comments_scope_granted`/`comments_reconnect_required` and
+`has_comments_scope()` are the one place this is checked; never re-implement the
+scope string check inline elsewhere.
+
+### ADR-018 — Comment sync reuses the video-sync engine's patterns exactly
+**Context:** Release 0.7.0 needed an idempotent, quota-conscious, fault-isolated
+comment sync. Sprint 6 had already solved this exact set of problems for video
+metrics.
+**Decision:** `youtube_comment_sync.py` mirrors `youtube_sync.py` deliberately: an
+overlap guard + stale-run reclaim (`SyncRun.platform="youtube_comments"`, same
+`SyncRun` table as video sync — one audit mechanism, discriminated by `platform`,
+not a parallel table), per-video fault isolation via SQL savepoints, and upsert-only
+persistence (a thread/comment is never deleted just because a later sync omits it —
+matching `YoutubeMetricSnapshot`'s "never delete history" principle). The
+quota-conscious strategy (recent videos every run, older videos every 4th run, or
+an explicit manual full refresh) is the one genuinely new piece, since video-metric
+sync doesn't have a "how far back to look" dimension the way comment threads do.
+**Consequences:** A future platform's comment/message sync (Facebook comments,
+Instagram DMs) should follow this same shape rather than reinventing dedup/overlap
+handling from scratch.

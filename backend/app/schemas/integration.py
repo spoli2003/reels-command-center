@@ -25,6 +25,10 @@ class YoutubeStatus(BaseModel):
     automatic_sync_interval_hours: Optional[float] = None
     automatic_sync_next_at: Optional[datetime] = None
     automatic_sync_note: str = "Automatyczna synchronizacja nie jest jeszcze skonfigurowana — uruchamiaj ją ręcznie."
+    # Release 0.7.0 — Community Inbox needs the youtube.force-ssl scope (read+write
+    # comments), which existing connections made before this release don't have.
+    comments_scope_granted: bool = False
+    comments_reconnect_required: bool = False
 
 
 class YoutubeVideoRead(BaseModel):

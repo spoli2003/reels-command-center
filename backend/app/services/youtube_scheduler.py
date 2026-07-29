@@ -1,4 +1,4 @@
-"""Automatic YouTube sync scheduler (Sprint 6 / Part 5).
+"""Automatic YouTube sync scheduler (Sprint 6 / Part 5; Release 0.7.0 adds comment sync).
 
 Runs as a single background asyncio task inside the existing backend container —
 no extra Docker service, no new infrastructure dependency (see docs/DECISIONS.md
@@ -7,6 +7,11 @@ default (ADR-009): enable via YOUTUBE_SYNC_ENABLED=true /
 YOUTUBE_SYNC_INTERVAL_HOURS=<hours, default 6>. Never raises out of the loop —
 a failed automatic sync is logged and retried on the next tick, it never crashes
 the API process.
+
+Each tick runs video-metric sync, then (if the connected account has granted the
+comments scope) an incremental comment sync — the same quota-conscious
+recent-vs-full strategy from youtube_comment_sync.py applies automatically, so this
+loop doesn't need its own separate cadence for comments.
 """
 
 import asyncio
@@ -18,10 +23,10 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.integrations.youtube.client import YoutubeClient, credentials_from_tokens
-from app.integrations.youtube.oauth import load_client_secrets
-from app.models.integration import PlatformAccount
-from app.services.token_crypto import decrypt_token
+from app.integrations.youtube.oauth import has_comments_scope
+from app.models.integration import PlatformAccount, YoutubeChannel
+from app.services.youtube_client_factory import build_youtube_client
+from app.services.youtube_comment_sync import CommentSyncAlreadyRunningError, sync_youtube_comments
 from app.services.youtube_sync import SyncAlreadyRunningError, sync_youtube
 
 logger = logging.getLogger("youtube_scheduler")
@@ -38,20 +43,32 @@ def _run_once_sync() -> None:
         if account is None:
             logger.info("Automatyczna synchronizacja pominięta — brak połączonego konta YouTube.")
             return
-        data = load_client_secrets(settings.client_secrets_path)
-        credentials = credentials_from_tokens(
-            decrypt_token(account.access_token_encrypted, settings.token_encryption_key),
-            decrypt_token(account.refresh_token_encrypted, settings.token_encryption_key) if account.refresh_token_encrypted else None,
-            data["client_id"],
-            data["client_secret"],
-            data.get("token_uri", "https://oauth2.googleapis.com/token"),
-        )
-        sync_youtube(db, account, YoutubeClient(credentials))
-        logger.info("Automatyczna synchronizacja YouTube zakończona pomyślnie.")
-    except SyncAlreadyRunningError:
-        logger.info("Automatyczna synchronizacja pominięta — inna synchronizacja już trwa.")
-    except Exception:
-        logger.exception("Automatyczna synchronizacja YouTube nie powiodła się.")
+        client = build_youtube_client(account, settings)
+        try:
+            channel, _ = sync_youtube(db, account, client)
+        except SyncAlreadyRunningError:
+            logger.info("Automatyczna synchronizacja pominięta — inna synchronizacja już trwa.")
+            channel = None
+        except Exception:
+            logger.exception("Automatyczna synchronizacja YouTube nie powiodła się.")
+            channel = None
+        else:
+            logger.info("Automatyczna synchronizacja YouTube zakończona pomyślnie.")
+
+        if channel is None:
+            channel = db.scalar(select(YoutubeChannel).where(YoutubeChannel.account_id == account.id))
+        if channel is None:
+            return
+        if not has_comments_scope(account.scopes):
+            logger.info("Automatyczna synchronizacja komentarzy pominięta — brak uprawnienia youtube.force-ssl (wymaga ponownego połączenia).")
+            return
+        try:
+            sync_youtube_comments(db, channel, client, mode="incremental")
+            logger.info("Automatyczna synchronizacja komentarzy zakończona pomyślnie.")
+        except CommentSyncAlreadyRunningError:
+            logger.info("Automatyczna synchronizacja komentarzy pominięta — inna synchronizacja komentarzy już trwa.")
+        except Exception:
+            logger.exception("Automatyczna synchronizacja komentarzy nie powiodła się.")
     finally:
         db.close()
 

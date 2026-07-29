@@ -1,26 +1,29 @@
 import { AppShell } from "../../../components/app-shell";
+import { CommunityInbox } from "../../../components/community-inbox";
 import { PlatformSubNav } from "../../../components/platform-sub-nav";
-import { YoutubeCompare } from "../../../components/youtube-compare";
+import { SyncStatusLine } from "../../../components/sync-status-line";
 import { createYoutubeApi } from "../../../lib/youtube-api";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
 
-export default async function YoutubeComparePage() {
+export default async function YoutubeCommunityPage() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const videos = await api.getVideos();
+  const [videos, quickReplies, status] = await Promise.all([api.getVideos(), api.getQuickReplies(), api.getStatus()]);
 
   return (
     <AppShell active="/youtube">
       <header className="topbar">
         <div>
-          <p className="eyebrow">YOUTUBE / PORÓWNANIE</p>
-          <h1>Porównanie filmów</h1>
-          <p className="muted">Zestaw do 6 filmów, aby porównać wyniki obok siebie.</p>
+          <p className="eyebrow">YOUTUBE / KOMENTARZE</p>
+          <h1>Skrzynka komentarzy</h1>
+          <p className="muted">
+            Przeglądaj, oceniaj priorytet i odpowiadaj na komentarze YouTube bez opuszczania RCC. <SyncStatusLine status={status} />
+          </p>
         </div>
       </header>
 
       <PlatformSubNav
-        active="/youtube/compare"
+        active="/youtube/community"
         tabs={[
           { href: "/youtube", label: "Dashboard" },
           { href: "/youtube/compare", label: "Porównanie" },
@@ -31,11 +34,11 @@ export default async function YoutubeComparePage() {
 
       {videos.length === 0 ? (
         <div className="emptyState">
-          <h3>Brak filmów</h3>
-          <p>Zsynchronizuj kanał YouTube ze strony głównej, aby móc porównywać filmy.</p>
+          <h3>Brak zsynchronizowanych filmów</h3>
+          <p>Połącz i zsynchronizuj kanał YouTube ze strony głównej, aby zacząć synchronizować komentarze.</p>
         </div>
       ) : (
-        <YoutubeCompare videos={videos} />
+        <CommunityInbox videos={videos} initialQuickReplies={quickReplies} />
       )}
     </AppShell>
   );

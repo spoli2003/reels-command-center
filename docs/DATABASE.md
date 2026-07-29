@@ -54,7 +54,35 @@ duplicates, see above) and `videos_failed` (videos whose processing raised insid
 their own SQL savepoint without rolling back the rest of the run; `status` becomes
 `"partial"`, never silently `"success"`, whenever this is nonzero). This is the audit
 trail behind the "sync is actually doing something" visibility fixed in Sprint 4.1
-and extended in Sprint 6.
+and extended in Sprint 6. Release 0.7.0 added `threads_discovered`/
+`comments_imported`/`replies_imported`, populated only on `platform="youtube_comments"`
+rows — one shared table, discriminated by `platform`, rather than a parallel table
+per sync type (see ADR-018).
+
+### YoutubeCommentThread *(Release 0.7.0)*
+One row per top-level comment thread on a tracked video: the top-level comment's
+own author/text/like/date fields live directly on this row (mirroring the YouTube
+Data API's `commentThreads` resource, which embeds the top-level comment in its own
+snippet), plus `total_reply_count`, `moderation_status`, `can_reply`. **Upsert-only**
+— a thread is never deleted just because a later sync temporarily omits it (API
+hiccups, moderation review). `platform_thread_id` is the natural upsert key.
+
+### YoutubeComment *(Release 0.7.0)*
+One row per **reply** — YouTube comments are a flat, two-level structure (no
+nested replies-of-replies), so `parent_comment_id` always points back to the
+thread's `top_level_comment_id`. The top-level comment's content is NOT duplicated
+here; it lives only on `YoutubeCommentThread` (see above). `is_own_reply` is set
+when `author_channel_id` matches the connected channel — this is what "answered"
+means (a thread with ≥1 reply where `is_own_reply=True`) and what authorizes
+editing/deleting (only the exact row the connected channel authored). Upsert-only
+from sync; explicitly deleting a reply through RCC's UI **does** remove the row —
+see ADR-018 for the distinction between sync-time upsert and user-initiated
+deletion.
+
+### QuickReplyTemplate *(Release 0.7.0)*
+Locally managed reply snippets, scoped by `account_id` (RCC is single-tenant
+today — see ADR-010 for the future `Workspace` scoping plan). Selecting one into
+the reply composer never sends it automatically.
 
 ### Reel *(legacy, disconnected)*
 An early "content idea" concept (title, category, hook) predating the unified content
@@ -75,7 +103,9 @@ second platform integration exists; see [ROADMAP.md](./ROADMAP.md) and
 
 ```
 PlatformAccount (1) ──── (1) YoutubeChannel ──┬── (many) YoutubeChannelSnapshot
-                                                └── (many) YoutubeVideo ──── (many) YoutubeMetricSnapshot
+                                                └── (many) YoutubeVideo ──┬── (many) YoutubeMetricSnapshot
+                                                                          └── (many) YoutubeCommentThread ──── (many) YoutubeComment
+PlatformAccount (1) ──── (many) QuickReplyTemplate
 SyncRun — not foreign-keyed to any of the above; correlated by platform + timestamp only.
 ```
 

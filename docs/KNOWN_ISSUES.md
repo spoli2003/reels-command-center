@@ -14,6 +14,42 @@ the architectural reasoning behind related tradeoffs.
   anywhere in the app, and the Router Cache no longer serves stale RSC payloads for
   dynamic routes.
 
+## Community Inbox (Release 0.7.0)
+
+- **The currently connected YouTube account must be reconnected before comments
+  work with real data.** It was authorized before this release under the old
+  `youtube.readonly` scope, which doesn't permit reading or posting comments. This
+  is expected, not a bug — `GET /status` correctly reports
+  `comments_scope_granted: false` / `comments_reconnect_required: true`, and the
+  YouTube panel shows a reconnect prompt. Reconnecting is additive/safe (see
+  ADR-017) and is the one action item tracked in [TODO.md](./TODO.md) that this
+  session could not perform itself (it requires an interactive Google consent
+  screen).
+- **No live comment sync or real reply was verified this release**, as a direct
+  consequence of the above — the backend gate (`_require_comments_scope`) was
+  confirmed to correctly reject the manual sync/reply endpoints with a clear 403
+  against the real (not-yet-reconnected) account, and all functionality was
+  verified via 15 dedicated mocked-API tests (`test_youtube_comments.py`) plus a
+  clean frontend production build. Live verification (a real sync, spot-checking
+  real threads, and — only with explicit approval — publishing one real test
+  reply) is still owed once the account is reconnected.
+- **"Double-submit protection" for replies is a UI-only guard** (the composer
+  disables itself while a request is in flight), not a backend idempotency key.
+  There's no natural request-level dedup for arbitrary free-text replies against
+  the real YouTube API — a genuine duplicate would require the user to submit the
+  exact same text twice in two separate, deliberate clicks after the first one
+  already completed, which the UI already prevents by disabling the button mid-
+  flight.
+- **Quick-reply templates are scoped by `PlatformAccount`, not by a `Workspace`**,
+  because Workspace doesn't exist yet (see ADR-010). This is a deliberate,
+  documented interim scope — the model's shape doesn't need to change when
+  Workspace ships, only the ownership column.
+- **No automated visual/responsive browser testing for the Community Inbox either**
+  — same caveat as Sprint 5/6 below. Layouts (comment cards, reply composer, quick-
+  reply manager) follow the existing 1100px/760px breakpoints but haven't been
+  visually confirmed in an actual browser, especially at mobile width where a
+  comment card's header/badges/reply composer stack could get cramped.
+
 ## Data
 
 - **YouTube's own view counts occasionally decrease between syncs.** The data-quality

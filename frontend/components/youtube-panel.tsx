@@ -115,6 +115,23 @@ export function YoutubePanel() {
             </div>
           </div>
 
+          <div className="syncDetailRow">
+            <span title="Uprawnienia OAuth aktualnie przyznane RCC przez to konto Google.">Uprawnienia</span>
+            <strong className={`syncStatusTag ${status.comments_scope_granted ? "success" : "partial"}`}>
+              {status.comments_scope_granted ? "Analityka + Komentarze" : "Tylko analityka (bez komentarzy)"}
+            </strong>
+          </div>
+          {status.comments_reconnect_required ? (
+            <div className="alert informational">
+              Aby korzystać ze Skrzynki komentarzy, połącz konto ponownie i zaakceptuj dodatkowe uprawnienie do odczytu i publikowania
+              komentarzy. Istniejące dane analityczne (filmy, historia, synchronizacje) zostaną zachowane — ponowne połączenie tylko
+              odświeży token dostępu.{" "}
+              <a href={`${API_URL}/api/integrations/youtube/connect`} className="textLink">
+                Połącz ponownie →
+              </a>
+            </div>
+          ) : null}
+
           {status.last_sync_status ? (
             <div className="syncDetails">
               <div className="syncDetailRow">

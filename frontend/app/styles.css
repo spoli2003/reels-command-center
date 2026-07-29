@@ -153,3 +153,39 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid #5cf0
 .metricComparisonBaselines{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11px;color:#77859a;margin:0 0 14px}
 .compareViewToggle{display:flex;gap:8px;margin:16px 0}
 .compareExportRow{display:flex;justify-content:flex-end;margin:0 0 12px}
+
+/* Release 0.7.0 — Community Inbox */
+.commentList{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+.commentCard{border:1px solid #253044;border-radius:16px;padding:18px;background:#0c1320}
+.commentCardHeader{display:flex;align-items:flex-start;gap:12px}
+.commentAvatar{width:38px;height:38px;border-radius:50%;flex:0 0 auto;object-fit:cover;background:#151f30}
+.commentAvatar.placeholder{display:grid;place-items:center;color:#68efb0;font-weight:900;border:1px solid #315246}
+.commentAuthorBlock{display:flex;flex-direction:column;flex:1;min-width:0}
+.commentAuthorBlock strong{font-size:14px}
+.commentCardBadges{display:flex;gap:6px;flex-wrap:wrap;flex:0 0 auto}
+.commentText{margin:12px 0;color:#dbe4f4;line-height:1.5;white-space:pre-wrap}
+.commentMetaRow{display:flex;gap:16px;align-items:center;color:#8b98ac;font-size:12px;flex-wrap:wrap}
+.commentVideoRef{display:flex;align-items:center;gap:10px;margin-top:14px;padding:10px;border:1px solid #202a3d;border-radius:10px}
+.commentVideoRef img,.commentVideoRefThumb{width:56px;height:32px;border-radius:6px;object-fit:cover;background:#151f30;flex:0 0 auto}
+.commentVideoRef span{font-size:13px;color:#c4cede}
+.commentReplies{margin-top:14px;padding-top:14px;border-top:1px solid #202a3d;display:flex;flex-direction:column;gap:12px}
+.commentReply{padding-left:14px;border-left:2px solid #253044}
+.commentReply.own{border-left-color:#5cf0ac}
+.commentReplyHeader{display:flex;align-items:center;gap:8px;font-size:13px}
+.commentReplyHeader strong{font-size:13px}
+.commentReply p{margin:6px 0;color:#c4cede;font-size:13px;white-space:pre-wrap}
+.ownReplyActions{display:flex;gap:12px}
+.replyToggle{margin-top:14px}
+.replyComposer{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.replyComposer textarea{width:100%;background:#0c1320;color:#eaf0fa;border:1px solid #29354a;border-radius:10px;padding:12px 13px;font:inherit;outline:none;resize:vertical}
+.replyComposer textarea:focus{border-color:#5cf0ac}
+.replyComposerFooter{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.replyComposerActions{display:flex;gap:8px}
+.charCounter{color:#647187;font-size:11px}
+.quickReplyPickerRow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.quickReplyManager{margin-top:14px;padding-top:14px;border-top:1px solid #253044}
+.quickReplyList{list-style:none;margin:12px 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.quickReplyEditRow{display:flex;align-items:center;gap:10px}
+.quickReplyEditRow span{flex:1;color:#dbe4f4;font-size:13px}
+.quickReplyEditRow input{flex:1;background:#0c1320;color:#eaf0fa;border:1px solid #29354a;border-radius:10px;padding:10px 12px;font:inherit;outline:none}
+@media(max-width:760px){.commentCardHeader{flex-wrap:wrap}.commentMetaRow{gap:10px}.replyComposerFooter{flex-direction:column;align-items:stretch;gap:8px}.quickReplyEditRow{flex-wrap:wrap}}

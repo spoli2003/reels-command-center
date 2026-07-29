@@ -3,6 +3,55 @@
 Entries are grouped by sprint, newest first. This changelog describes product/
 engineering outcomes, not individual commits.
 
+## Release 0.7.0 — YouTube Community Inbox
+
+RCC's first module that acts, not just analyzes: creators can now review,
+prioritize, and reply to YouTube comments without leaving RCC. Audited the
+existing integration first — the OAuth scope (`youtube.readonly` +
+`yt-analytics.readonly`) permits reading videos/channels/analytics but not
+comments at all, and definitely not posting replies, which requires the
+`youtube.force-ssl` scope (the least-privilege scope YouTube offers for
+read+write comment access — there is no narrower official scope for posting).
+Every existing connection must reconnect once (upsert-safe by design — the
+existing OAuth callback already matches by channel ID, so reconnecting only
+refreshes tokens/scopes; no analytics data, sync history, or settings are lost).
+The `/status` endpoint and YouTube panel now show granted capabilities and a
+one-click reconnect prompt when the comments scope is missing.
+
+Added a durable local comment model (`YoutubeCommentThread`/`YoutubeComment`,
+upsert-only — a locally stored comment is never deleted just because a later
+sync temporarily omits it) and a quota-conscious sync strategy: videos published
+within the last 30 days sync every run, older videos only every 4th run (or via
+an explicit manual full refresh) — see ADR-018. Comment sync reuses the same
+`SyncRun` audit table as video sync (`platform="youtube_comments"`), with its own
+overlap guard, stale-run recovery, and per-video fault isolation, mirroring
+Sprint 6's video-sync engine exactly.
+
+The new **Community Inbox** (`/youtube/community`, "Komentarze" tab everywhere)
+shows every imported comment thread with author, text, date, likes, reply count,
+associated video, an external YouTube deep link, and response status — filterable
+by unanswered/answered/likely-question/recent/with-replies, searchable, sortable,
+and scoped to one video. A deterministic (no LLM) heuristic flags "Prawdopodobne
+pytanie" (likely question) from question marks and common Polish interrogative
+phrases — always hedged, never asserted as certain — and a transparent priority
+score (unanswered + question + recency + likes + replies, explained in a
+tooltip) ranks what deserves attention first.
+
+Replying, editing, and deleting are real, not simulated: `comments.insert` for
+new replies, `comments.update`/`comments.delete` for the channel's own replies
+only — every request is authorized server-side against the connected channel's
+own data (a comment ID from the browser is never trusted at face value), and a
+viewer's own comment can never be edited or deleted through RCC. The composer
+never claims success before the API confirms it, preserves the draft on a
+recoverable failure, and supports locally managed quick-reply templates
+(create/edit/delete, inserted into the composer without auto-sending). The video
+detail page gained a compact Comments section (counts + latest threads + link to
+the filtered Inbox) and the Home page gained a "comments awaiting reply" summary
+— both without duplicating the full Inbox experience.
+
+No AI was implemented — the question/priority heuristics are the same
+deterministic, explainable style as every other RCC classification.
+
 ## Release 0.6.1 — Synchronization Consistency (patch)
 
 Fixed a real bug: the Home page and the YouTube integration panel could show two
