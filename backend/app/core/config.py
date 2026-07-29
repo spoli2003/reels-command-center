@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://127.0.0.1:8000/api/integrations/youtube/callback"
     frontend_url: str = "http://127.0.0.1:3000"
     oauth_insecure_transport: bool = True
+    # Automatic sync scheduler (Sprint 6 / Part 5) — disabled by default per
+    # docs/DECISIONS.md ADR-009; must be explicitly opted into via env var.
+    youtube_sync_enabled: bool = False
+    youtube_sync_interval_hours: float = 6.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

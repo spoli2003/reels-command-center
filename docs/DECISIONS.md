@@ -132,3 +132,42 @@ accent) and never revisited.
 system, no per-page visual reinvention.
 **Consequences:** "Do not redesign" in a sprint brief means exactly this — extend the
 existing visual language, don't introduce a new one alongside it.
+
+### ADR-013 — History charts are anchored to content age, never to sync timestamps
+**Context:** Sprint 5/6 both independently required this: raw synchronization
+timestamps make an irregular sync cadence (manual clicks, uneven intervals) look like
+the shape of the data itself, which is misleading and can show dozens of
+near-identical points.
+**Decision:** Every history chart (`content_metrics.bucket_history`, and the
+channel-history equivalent) buckets by elapsed time since a content-relevant anchor
+(a video's publish date; a channel's first tracked snapshot) — daily under 30 days,
+weekly 30–180 days, monthly beyond that — and shows an explanatory empty state
+instead of a chart when fewer than 2 periods exist.
+**Consequences:** This is a generic function in the platform-agnostic
+`content_metrics.py`, not YouTube-specific — any future platform's video history
+buckets the same way for free.
+
+### ADR-014 — Snapshot dedup is time-window based, not value-based
+**Context:** Sprint 6 needed a deterministic answer to "what counts as an accidental
+duplicate snapshot" (Part 3).
+**Decision:** A snapshot is a duplicate only if the same video/channel already has
+one captured within the last 5 minutes (`MIN_SNAPSHOT_INTERVAL_MINUTES`) — never
+based on whether the values are unchanged. Two legitimate periodic syncs 6 hours
+apart with identical view counts are NOT deduplicated; that "no growth" data point is
+real signal (feeds `Trend.DECLINING`), not noise.
+**Consequences:** Any future sync-triggering path (manual button, scheduler, a
+webhook) shares this one guard in `youtube_sync.py` — don't add a second,
+value-based dedup check elsewhere; it would silently erase legitimate zero-growth
+history.
+
+### ADR-015 — The automatic sync scheduler runs in-process, not as a separate service
+**Context:** Sprint 3's original plan and ADR-009 both anticipated a scheduler; Sprint
+6 had to decide its actual shape.
+**Decision:** `app/services/youtube_scheduler.py` is a single asyncio background task
+started from the existing backend container's FastAPI `lifespan`, not a new Docker
+service, not Celery/APScheduler. Still disabled by default (`YOUTUBE_SYNC_ENABLED`)
+per ADR-009.
+**Consequences:** Simpler to reason about and operate for a single-tenant tool with
+one sync target. Revisit this decision (a real worker service, e.g. once Redis is
+used for more than incidental config) only if RCC needs to run sync jobs across
+multiple processes/replicas — not before.

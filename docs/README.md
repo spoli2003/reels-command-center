@@ -63,3 +63,5 @@ All project documentation lives in `/docs`:
 | [DATABASE.md](./DATABASE.md) | Data model — current and planned |
 | [CHANGELOG.md](./CHANGELOG.md) | What shipped, sprint by sprint |
 | [TODO.md](./TODO.md) | Active and future work, grouped by category |
+| [DECISIONS.md](./DECISIONS.md) | Architecture Decision Record — the source of truth when docs disagree |
+| [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) | Honest current gaps and limitations |

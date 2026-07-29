@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,13 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
+
+
+def load_client_secrets(path: Path) -> dict:
+    """Shared by the manual /sync endpoint and the automatic scheduler so both
+    build OAuth credentials the exact same way."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data.get("web") or data.get("installed") or {}
 
 
 def configure_local_oauth(settings: Settings) -> None:

@@ -35,15 +35,26 @@ identity row.
 
 ### YoutubeMetricSnapshot
 One row per video per sync run: `captured_at`, `views`, `likes`, `comments`.
-**Immutable and append-only** — never updated in place, only inserted. This is what
-makes velocity/trend/growth analysis possible: a video's performance is a time series,
-not a single mutable number.
+**Immutable and append-only** — never updated in place, only inserted, and never
+deleted except by the Sprint 6 data-quality audit's narrowly-scoped exact-duplicate
+repair (see below). This is what makes velocity/trend/growth analysis possible: a
+video's performance is a time series, not a single mutable number. There is no
+database-level uniqueness constraint on `(video_id, captured_at)` — dedup is an
+application-level time-window check in `youtube_sync.py` instead (see ADR-014 in
+[DECISIONS.md](./DECISIONS.md)): a new snapshot is skipped if the same video already
+has one younger than 5 minutes, which is how the sync engine stays idempotent against
+an accidental double-invocation without ever discarding a legitimate "unchanged since
+last sync" data point.
 
 ### SyncRun
 One row per sync attempt: platform, status (`running`/`success`/`partial`/`failed`),
-start/finish time, and (since Sprint 4.1) `videos_discovered`, `videos_updated`,
-`snapshots_created`, plus any error message. This is the audit trail behind the
-"sync is actually doing something" visibility fixed in Sprint 4.1.
+start/finish time, `videos_discovered`, `videos_updated`, `snapshots_created` (since
+Sprint 4.1), and — since Sprint 6 — `snapshots_deduplicated` (snapshots skipped as
+duplicates, see above) and `videos_failed` (videos whose processing raised inside
+their own SQL savepoint without rolling back the rest of the run; `status` becomes
+`"partial"`, never silently `"success"`, whenever this is nonzero). This is the audit
+trail behind the "sync is actually doing something" visibility fixed in Sprint 4.1
+and extended in Sprint 6.
 
 ### Reel *(legacy, disconnected)*
 An early "content idea" concept (title, category, hook) predating the unified content

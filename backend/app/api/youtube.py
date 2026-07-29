@@ -1,8 +1,5 @@
-import json
 import secrets
 from datetime import datetime, timezone
-from pathlib import Path
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -12,18 +9,18 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.integrations.youtube.client import YoutubeClient, credentials_from_tokens
-from app.integrations.youtube.oauth import build_flow
-from app.models.integration import PlatformAccount, YoutubeChannel, YoutubeMetricSnapshot, YoutubeVideo
+from app.integrations.youtube.oauth import build_flow, load_client_secrets
+from app.models.integration import PlatformAccount, SyncRun, YoutubeChannel, YoutubeMetricSnapshot, YoutubeVideo
 from app.schemas.integration import SyncResult, YoutubeStatus, YoutubeVideoRead
+from app.schemas.youtube_analytics import ChannelHistoryRead, DataQualityReport, VideoDetailRead, VideoHistoryRead
+from app.services import youtube_scheduler
 from app.services.token_crypto import decrypt_token, encrypt_token
-from app.services.youtube_sync import sync_youtube
+from app.services.youtube_analytics import get_channel_history, get_video_detail, get_video_history
+from app.services.youtube_data_quality import audit_youtube_data_quality
+from app.services.youtube_intelligence_adapter import compute_all_video_metadata, get_video_history_buckets
+from app.services.youtube_sync import SyncAlreadyRunningError, sync_youtube
 
 router = APIRouter(prefix="/api/integrations/youtube", tags=["YouTube"])
-
-
-def _oauth_client_data(path: Path) -> dict:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return data.get("web") or data.get("installed") or {}
 
 
 @router.get("/status", response_model=YoutubeStatus)
@@ -33,6 +30,16 @@ def status(db: Session = Depends(get_db)):
     account = db.scalar(select(PlatformAccount).where(PlatformAccount.platform == "youtube"))
     channel = None if account is None else db.scalar(select(YoutubeChannel).where(YoutubeChannel.account_id == account.id))
     video_count = 0 if channel is None else db.scalar(select(func.count(YoutubeVideo.id)).where(YoutubeVideo.channel_id == channel.id)) or 0
+
+    last_run = db.scalar(
+        select(SyncRun).where(SyncRun.platform == "youtube", SyncRun.status != "running").order_by(SyncRun.started_at.desc())
+    )
+    duration = None
+    if last_run and last_run.finished_at:
+        duration = round((last_run.finished_at - last_run.started_at).total_seconds(), 1)
+
+    settings_ = get_settings()
+    scheduler_enabled = settings_.youtube_sync_enabled
     return YoutubeStatus(
         configured=configured,
         connected=account is not None,
@@ -41,6 +48,23 @@ def status(db: Session = Depends(get_db)):
         last_synced_at=channel.synced_at if channel else None,
         video_count=video_count,
         message="Gotowe do połączenia" if configured and not account else ("Kanał połączony" if account else "Dodaj plik OAuth i klucz szyfrowania"),
+        last_sync_status=last_run.status if last_run else None,
+        last_sync_duration_seconds=duration,
+        last_sync_videos_discovered=last_run.videos_discovered if last_run else None,
+        last_sync_videos_new=last_run.imported_items if last_run else None,
+        last_sync_videos_updated=last_run.videos_updated if last_run else None,
+        last_sync_snapshots_created=last_run.snapshots_created if last_run else None,
+        last_sync_snapshots_deduplicated=last_run.snapshots_deduplicated if last_run else None,
+        last_sync_videos_failed=last_run.videos_failed if last_run else None,
+        last_sync_error=last_run.error_message if last_run else None,
+        automatic_sync_enabled=scheduler_enabled,
+        automatic_sync_interval_hours=settings_.youtube_sync_interval_hours if scheduler_enabled else None,
+        automatic_sync_next_at=youtube_scheduler.next_run_at(),
+        automatic_sync_note=(
+            f"Automatyczna synchronizacja aktywna — co {settings_.youtube_sync_interval_hours:g}h."
+            if scheduler_enabled
+            else "Automatyczna synchronizacja nie jest jeszcze skonfigurowana — uruchamiaj ją ręcznie."
+        ),
     )
 
 
@@ -97,7 +121,7 @@ def sync(db: Session = Depends(get_db)):
     account = db.scalar(select(PlatformAccount).where(PlatformAccount.platform == "youtube"))
     if account is None:
         raise HTTPException(409, "Najpierw połącz konto YouTube")
-    data = _oauth_client_data(settings.client_secrets_path)
+    data = load_client_secrets(settings.client_secrets_path)
     credentials = credentials_from_tokens(
         decrypt_token(account.access_token_encrypted, settings.token_encryption_key),
         decrypt_token(account.refresh_token_encrypted, settings.token_encryption_key) if account.refresh_token_encrypted else None,
@@ -105,13 +129,17 @@ def sync(db: Session = Depends(get_db)):
         data["client_secret"],
         data.get("token_uri", "https://oauth2.googleapis.com/token"),
     )
-    channel, imported = sync_youtube(db, account, YoutubeClient(credentials))
+    try:
+        channel, imported = sync_youtube(db, account, YoutubeClient(credentials))
+    except SyncAlreadyRunningError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return SyncResult(imported_videos=imported, channel_title=channel.title, synced_at=channel.synced_at or datetime.now(timezone.utc))
 
 
 @router.get("/videos", response_model=list[YoutubeVideoRead])
 def videos(db: Session = Depends(get_db)):
     items = db.scalars(select(YoutubeVideo).order_by(YoutubeVideo.published_at.desc()).limit(200)).all()
+    metadata = compute_all_video_metadata(db)
     result: list[YoutubeVideoRead] = []
     for item in items:
         latest = db.scalar(select(YoutubeMetricSnapshot).where(YoutubeMetricSnapshot.video_id == item.id).order_by(YoutubeMetricSnapshot.captured_at.desc()).limit(1))
@@ -125,6 +153,7 @@ def videos(db: Session = Depends(get_db)):
             views=latest.views if latest else 0,
             likes=latest.likes if latest else 0,
             comments=latest.comments if latest else 0,
+            **metadata.get(item.youtube_video_id, {}),
         ))
     return result
 
@@ -135,3 +164,36 @@ def disconnect(db: Session = Depends(get_db)):
     for account in accounts:
         db.delete(account)
     db.commit()
+
+
+@router.get("/videos/{youtube_video_id}", response_model=VideoDetailRead)
+def video_detail(youtube_video_id: str, db: Session = Depends(get_db)):
+    detail = get_video_detail(db, youtube_video_id)
+    if detail is None:
+        raise HTTPException(404, "Nie znaleziono filmu")
+    metadata = compute_all_video_metadata(db)
+    detail.update(metadata.get(youtube_video_id, {}))
+    return detail
+
+
+@router.get("/videos/{youtube_video_id}/history", response_model=VideoHistoryRead)
+def video_history(youtube_video_id: str, db: Session = Depends(get_db)):
+    history = get_video_history(db, youtube_video_id)
+    if history is None:
+        raise HTTPException(404, "Nie znaleziono filmu")
+    buckets = get_video_history_buckets(db, youtube_video_id)
+    return VideoHistoryRead(points=history, **(buckets or {"granularity": "daily", "buckets": [], "insufficient": True}))
+
+
+@router.get("/channel/history", response_model=ChannelHistoryRead)
+def channel_history(db: Session = Depends(get_db)):
+    result = get_channel_history(db)
+    if result is None:
+        raise HTTPException(404, "Brak połączonego kanału")
+    return result
+
+
+@router.get("/data-quality", response_model=DataQualityReport)
+def data_quality(db: Session = Depends(get_db)):
+    return audit_youtube_data_quality(db)
+    return history

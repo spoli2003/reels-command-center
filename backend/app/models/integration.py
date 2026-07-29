@@ -42,6 +42,26 @@ class YoutubeChannel(Base):
 
     account: Mapped[PlatformAccount] = relationship(back_populates="channels")
     videos: Mapped[list["YoutubeVideo"]] = relationship(back_populates="channel", cascade="all, delete-orphan")
+    snapshots: Mapped[list["YoutubeChannelSnapshot"]] = relationship(back_populates="channel", cascade="all, delete-orphan")
+
+
+class YoutubeChannelSnapshot(Base):
+    """Channel-level point-in-time snapshot, written once per sync run alongside video snapshots.
+
+    Only accumulates from the moment this model was introduced onward — there is
+    no way to backfill historical subscriber counts for periods before this table existed.
+    """
+
+    __tablename__ = "youtube_channel_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("youtube_channels.id", ondelete="CASCADE"), nullable=False, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    subscriber_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    view_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    video_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+
+    channel: Mapped[YoutubeChannel] = relationship(back_populates="snapshots")
 
 
 class YoutubeVideo(Base):
@@ -84,3 +104,8 @@ class SyncRun(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     imported_items: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    videos_discovered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    videos_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    snapshots_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    snapshots_deduplicated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    videos_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

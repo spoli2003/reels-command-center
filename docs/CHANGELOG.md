@@ -3,18 +3,59 @@
 Entries are grouped by sprint, newest first. This changelog describes product/
 engineering outcomes, not individual commits.
 
-## Sprint 5 — Advanced Analytics & Usability *(in progress)*
+## Sprint 6 — Historical Analytics Engine
 
-Focused on making the existing analytics experience faster and more powerful without
-adding new pages: click-to-sort table headers with a persistent 3-state cycle,
-richer filtering (min/max view counts, "best/worst/recent/trending" quick presets),
-previous/next video navigation with keyboard shortcuts, an honest "not currently
-available" card for YouTube metrics that require the (unimplemented) Analytics API,
-CSV export from the comparison page, an expanded performance-label taxonomy (🔥 Viral
-→ 💀 Dead, deterministic and mutually exclusive), and structured per-video metadata
-(`performance_score`, `trend`, `engagement_category`, `growth_category`,
-`topic_keywords`) exposed via the existing `/videos` and `/videos/{id}` endpoints in
-preparation for a future AI narration layer (no AI implemented).
+Turned the sync path from "runs manually, hopefully without duplicating data" into a
+real historical engine. Audited `youtube_sync.py` and found two genuine gaps: nothing
+stopped two overlapping syncs from both writing near-identical snapshots, and nothing
+recovered a `SyncRun` left stuck in `"running"` by a crash/restart. Fixed both: an
+overlap guard rejects a sync while another is genuinely in flight (`409`), a stale
+`"running"` row older than 30 minutes is reclaimed as failed, and a snapshot is
+skipped as a duplicate if the same video/channel already has one younger than 5
+minutes — verified against the real connected channel (a second immediate sync
+correctly produced `snapshots_created: 0`, `snapshots_deduplicated: 36`). Added
+per-video fault isolation via a SQL savepoint per video, so one bad API response
+marks that video failed (`status: "partial"`) instead of rolling back the whole run —
+this closes the Sprint 3 backlog item. Added an in-process automatic scheduler
+(`YOUTUBE_SYNC_ENABLED` / `YOUTUBE_SYNC_INTERVAL_HOURS`, default 6h, disabled unless
+explicitly enabled per ADR-009) — deliberately a background asyncio task inside the
+existing backend container rather than a new Docker service, to avoid adding
+infrastructure a single-tenant tool doesn't yet need. History charts (video and
+channel) now bucket by age instead of raw sync timestamps — under 30 days shows one
+point per day since publish, 30–180 days one point per week, over 180 days one point
+per month — with an honest empty state when fewer than two periods exist, instead of
+a jagged chart of near-identical synchronization points. Added a video-detail
+timeline (publish → first sync → snapshots → latest sync), velocity/acceleration/
+peak-growth/largest-slowdown numbers, a channel-wide history endpoint (subscribers/
+views/videos), and a data-quality audit that checks for exact-duplicate snapshots
+(auto-repaired), impossible timestamps, and non-monotonic view drops (reported only —
+a real one was found on the connected channel, a legitimate YouTube-side correction,
+not a bug). No AI implemented; the new velocity/acceleration/growth fields are
+deterministic inputs for a future AI layer, same as Sprint 5's metadata.
+
+## Sprint 5 — Advanced Analytics & Usability
+
+Made the existing analytics experience faster and more powerful without adding new
+pages. Every video table now supports click-to-sort headers with a persistent
+3-state cycle (desc → asc → default), extended to score/age/duration/title, with
+sort state kept in the URL. Filtering gained min/max view-count bounds and a
+"best/worst/recent/trending" quick-filter row (best/worst adapt to the current
+set's own score distribution — 70th/30th percentile — not a fixed threshold). The
+video detail page gained previous/next navigation (with arrow-key shortcuts),
+a `?from=` back-to-filtered-list link, an honest "not currently available" card
+listing exactly which YouTube Analytics API metrics RCC doesn't have (never fake
+zeros), and a reserved "AI Summary" card with the literal required placeholder text.
+The comparison page gained a sortable table view (alongside the existing cards),
+whole-channel median/average/best-ever baselines per metric (not just the compared
+set), and a semicolon-delimited CSV export. A 7-tier performance-label taxonomy
+(🔥 Viral → 💀 Dead, priority-ordered so a video is never tagged as two contradictory
+states) is now computed once on the backend and shown identically everywhere — Library
+table, "Wszystkie filmy," compare cards/table, and the video-detail hero. Every video
+now exposes structured, deterministic metadata (`performance_score`, `trend`,
+`engagement_category`, `growth_category`, `topic_keywords`, plus Sprint 6's
+velocity/acceleration/gain fields) via the existing `/videos` and `/videos/{id}`
+endpoints, shown in a new "Metadane techniczne" section — preparation for a future AI
+narration layer; no AI implemented.
 
 ## Sprint 4.1 — Product Polish
 
@@ -50,7 +91,7 @@ fault isolation, a Docker-based scheduler) but was not approved/implemented befo
 work moved to Sprint 4. The one concrete piece that shipped — per-run channel-level
 snapshots (`YoutubeChannelSnapshot`), enabling subscriber-count history — landed as
 part of Sprint 4's daily-brief work instead. The scheduler and full idempotency
-guarantees remain open (see [TODO.md](./TODO.md)).
+guarantees were later delivered in Sprint 6.
 
 ## Sprint 1.2 — Video Navigation & Detail Pages
 

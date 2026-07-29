@@ -53,7 +53,31 @@ video's metadata is a single row, its performance over time is an append-only lo
 
 `backend/app/services/youtube_analytics.py` — per-video and channel-level derived
 metrics (views/day, engagement rate, channel views/day normalized by the age of the
-*oldest tracked video*, never by YouTube account age).
+*oldest tracked video*, never by YouTube account age). Also owns channel-level
+history bucketing (`get_channel_history`) and the [data-quality audit](#data-quality-audit)
+below.
+
+#### History bucketing (Sprint 6)
+
+Both video history (`content_metrics.bucket_history`, platform-agnostic) and channel
+history (`youtube_analytics.get_channel_history`, YouTube-specific) group raw,
+irregularly-spaced snapshots into age-anchored periods instead of plotting raw
+synchronization timestamps — see ADR-013 in [DECISIONS.md](./DECISIONS.md) for why.
+Rule: under 30 days since the anchor (a video's publish date; a channel's first
+tracked snapshot) → one point per day; 30–180 days → one point per week; beyond 180
+days → one point per month. Each period's value is its *last* snapshot (cumulative
+counters, so this is a closing value, like a daily candle) via the bucketing
+function, exposed at `GET /videos/{id}/history` (`points` + `buckets` +
+`granularity` + `insufficient`) and `GET /channel/history`.
+
+#### Data-quality audit
+
+`youtube_data_quality.audit_youtube_data_quality` (`GET
+/api/integrations/youtube/data-quality`) checks for exact-duplicate snapshots
+(auto-repaired — see ADR-014), impossible timestamps (a snapshot dated before the
+video's publish date), and non-monotonic view drops (reported only, never
+"corrected" — YouTube itself occasionally removes spam views after the fact, which
+is a legitimate external event, not RCC data corruption).
 
 ### Creator Intelligence
 
@@ -123,13 +147,33 @@ client components (`"use client"`) exist only where interactivity is required
 
 ## Scheduler & automation
 
-**Not implemented.** Sync is manual only (`POST /api/integrations/youtube/sync`,
-triggered from the UI). A full scheduler design (Docker service, env-configurable
-interval, concurrency guard, idempotent snapshot timestamps) was produced during
-planning but never approved/built — see [TODO.md](./TODO.md). What *did* ship from
-that plan: every sync run now records `videos_discovered`/`videos_updated`/
-`snapshots_created`/duration/errors on `SyncRun`, and one `YoutubeChannelSnapshot` per
-run, so sync effects are auditable even without automation.
+Implemented in Sprint 6 as `backend/app/services/youtube_scheduler.py` — a single
+`asyncio` background task started from the FastAPI `lifespan` hook in `main.py`, not
+a separate Docker service (see ADR-015 for why). Configuration:
+`YOUTUBE_SYNC_ENABLED` (default `false`) and `YOUTUBE_SYNC_INTERVAL_HOURS` (default
+`6`). Disabled by default per ADR-009 — an operator must explicitly opt in. The
+scheduler reuses the exact same `sync_youtube()` function and overlap/dedup guards as
+the manual `POST /api/integrations/youtube/sync` endpoint (see below), so there is
+only one sync code path regardless of trigger.
+
+Sync itself (`backend/app/services/youtube_sync.py`) is idempotent and
+crash-tolerant:
+- **Overlap guard**: a sync request while another is genuinely `"running"` for the
+  same platform is rejected (`409`) rather than allowed to race.
+- **Stale-run reclaim**: a `"running"` row older than 30 minutes is treated as an
+  orphan from a crash/restart, marked `"failed"`, and a new sync is allowed to
+  proceed — this is what makes "recover correctly after restart" true without any
+  manual intervention.
+- **Per-video fault isolation**: each video is processed inside its own SQL
+  savepoint (`db.begin_nested()`); one bad API response marks that video failed and
+  the run continues, so `status` becomes `"partial"` (never falsely `"success"`)
+  instead of losing every other video's already-processed data.
+- **Snapshot dedup**: see ADR-014.
+
+Every sync run records `videos_discovered`/`videos_updated`/`snapshots_created`/
+`snapshots_deduplicated`/`videos_failed`/duration/errors on `SyncRun`, and one
+`YoutubeChannelSnapshot` per run, so sync effects are fully auditable — surfaced in
+the UI's sync panel including automatic-scheduler status and the next planned run.
 
 ## Integrations
 
