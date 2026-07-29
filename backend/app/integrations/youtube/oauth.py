@@ -4,12 +4,16 @@ from typing import Any
 
 from app.core.config import Settings
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
+]
 
 
 def configure_local_oauth(settings: Settings) -> None:
     if settings.environment == "development" and settings.oauth_insecure_transport:
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 
 
 def build_flow(
