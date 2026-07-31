@@ -50,5 +50,14 @@ conclusion before the raw numbers behind it.
   rather than a bare "No data."
 - **Unavailable metrics are labeled, not hidden or faked** — see the "not currently
   available" card pattern on the video detail page.
+- **Every ranking score is auditable in place** — show the exact weights,
+  normalized inputs, points added and points not earned; link to the full
+  methodology rather than asking the creator to trust an unexplained number.
 - **Dark theme only**, RCC's existing palette (`#070a11` background, `#5cf0ac` accent)
   — do not introduce a second visual language.
+- **Every platform uses the same information architecture** — Dashboard,
+  Materiały, Porównanie, Co dalej?, Komentarze. A tab may disappear only when a
+  provider objectively cannot supply or support that capability.
+- **Synchronization is operational UI, not analytics** — connection controls,
+  schedules, errors and run history live on `/synchronization`; platform
+  dashboards only show the compact shared status strip and a link to that center.

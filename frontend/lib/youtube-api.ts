@@ -1,3 +1,5 @@
+import { normalizeOptionalNullableNumber } from "./api-normalization";
+
 export type YoutubeSummary = {
   // last_synced_at intentionally absent — GET /status (YoutubeStatus) is the
   // single source of truth for sync time/state everywhere in the app.
@@ -84,6 +86,7 @@ export type YoutubeChannelVideo = YoutubeStructuredMetadata & {
   views: number;
   likes: number;
   comments: number;
+  followers_gained: number | null;
 };
 
 export type YoutubeScatterPoint = {
@@ -108,11 +111,31 @@ export type YoutubeVideoDetail = Omit<YoutubeStructuredMetadata, "views_per_day"
   views: number;
   likes: number;
   comments: number;
+  followers_gained: number | null;
   engagement_rate: number;
   views_per_day: number;
   like_ratio: number;
   comment_ratio: number;
 };
+
+type YoutubeChannelVideoWire = Omit<YoutubeChannelVideo, "followers_gained"> & { followers_gained?: unknown };
+type YoutubeVideoDetailWire = Omit<YoutubeVideoDetail, "followers_gained"> & { followers_gained?: unknown };
+
+export function normalizeYoutubeChannelVideo(video: YoutubeChannelVideoWire): YoutubeChannelVideo {
+  const { followers_gained: rawFollowersGained, ...rest } = video;
+  return {
+    ...rest,
+    followers_gained: normalizeOptionalNullableNumber(rawFollowersGained, "followers_gained"),
+  };
+}
+
+export function normalizeYoutubeVideoDetail(video: YoutubeVideoDetailWire): YoutubeVideoDetail {
+  const { followers_gained: rawFollowersGained, ...rest } = video;
+  return {
+    ...rest,
+    followers_gained: normalizeOptionalNullableNumber(rawFollowersGained, "followers_gained"),
+  };
+}
 
 export type YoutubeVideoHistoryPoint = {
   captured_at: string;
@@ -195,6 +218,7 @@ export type CommentThreadRead = {
   updated_at: string;
   total_reply_count: number;
   can_reply: boolean;
+  is_own_thread: boolean;
   conversation_state: ConversationState;
   last_message_at: string;
   is_likely_question: boolean;
@@ -206,6 +230,7 @@ export type CommentThreadRead = {
 
 export type CommentInboxSummary = {
   total_visible: number;
+  own_threads_count: number;
   new_count: number;
   waiting_count: number;
   resolved_count: number;
@@ -237,7 +262,7 @@ export type CommentSyncStatus = {
 
 export type QuickReplyTemplate = { id: number; text: string; position: number };
 
-export type CommentQuickFilter = "all" | "new" | "waiting" | "resolved" | "closed" | "questions" | "recent" | "with_replies" | "highly_liked";
+export type CommentQuickFilter = "all" | "mine" | "new" | "waiting" | "resolved" | "closed" | "questions" | "recent" | "with_replies" | "highly_liked";
 export type CommentSort = "newest" | "oldest" | "most_liked" | "most_replies" | "priority" | "recently_active";
 
 export type SupportingVideo = { youtube_video_id: string; title: string; thumbnail_url: string | null };
@@ -328,8 +353,11 @@ export function createYoutubeApi(baseUrl: string) {
       getJson<YoutubeTimeseriesPoint[]>(`${prefix}/analytics/timeseries?metric=${metric}`, []),
     getUploadFrequency: (interval: "week" | "month" = "month") =>
       getJson<YoutubeUploadBucket[]>(`${prefix}/analytics/upload-frequency?interval=${interval}`, []),
-    getVideos: () => getJson<YoutubeChannelVideo[]>(`${prefix}/videos`, []),
-    getVideoDetail: (id: string) => getJson<YoutubeVideoDetail | null>(`${prefix}/videos/${id}`, null),
+    getVideos: async () => (await getJson<YoutubeChannelVideoWire[]>(`${prefix}/videos`, [])).map(normalizeYoutubeChannelVideo),
+    getVideoDetail: async (id: string) => {
+      const video = await getJson<YoutubeVideoDetailWire | null>(`${prefix}/videos/${id}`, null);
+      return video ? normalizeYoutubeVideoDetail(video) : null;
+    },
     getVideoHistory: (id: string) =>
       getJson<YoutubeVideoHistory>(`${prefix}/videos/${id}/history`, { points: [], granularity: "daily", buckets: [], insufficient: true }),
     getChannelHistory: () =>
@@ -348,6 +376,7 @@ export function createYoutubeApi(baseUrl: string) {
       return getJson<CommentInboxRead>(`${prefix}/comments${qs ? `?${qs}` : ""}`, {
         summary: {
           total_visible: 0,
+          own_threads_count: 0,
           new_count: 0,
           waiting_count: 0,
           resolved_count: 0,

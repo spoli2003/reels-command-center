@@ -126,10 +126,7 @@ export function CommentThreadCard({
   const [replies, setReplies] = useState(row.replies);
   const [state, setState] = useState(row.conversation_state);
   const isModerated = row.conversation_state === "closed";
-  // The top-level comment's own authorship never changes across local reply
-  // mutations — infer it once from the server-computed initial state (a
-  // channel's own pinned top-level comment with zero replies is "resolved").
-  const topLevelIsOwn = row.replies.length === 0 && row.conversation_state === "resolved";
+  const topLevelIsOwn = row.is_own_thread;
 
   function refreshState(nextReplies: ReplyRead[]) {
     setState(recomputeConversationState(row.published_at, nextReplies, isModerated, topLevelIsOwn));
@@ -148,6 +145,7 @@ export function CommentThreadCard({
           <span className="muted">{formatDate(row.published_at)}</span>
         </div>
         <div className="commentCardBadges">
+          {row.is_own_thread ? <span className="pill success">Twój komentarz</span> : null}
           {row.is_likely_question ? (
             <span className="performanceBadge good" title="Wykryte na podstawie znaku zapytania lub słów pytających — nie mamy pewności, to sygnał, nie fakt.">
               Prawdopodobne pytanie

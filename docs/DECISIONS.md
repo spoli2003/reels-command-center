@@ -253,3 +253,195 @@ prioritize an already-resolved conversation" is enforced structurally, not by
 convention. Any future comment-adjacent feature (e.g. a Facebook Messenger-style
 inbox) should reuse this exact state machine rather than inventing a new
 answered/unanswered concept.
+
+### ADR-020 — Release 0.8.0 activates the unified content engine instead of building parallel platform stacks
+**Context:** Release 0.8.0 adds Facebook and Instagram and explicitly forbids
+`youtubeService`/`facebookService`/`instagramService`-style duplication. RCC
+already has two candidate homes for new platforms: (a) copy the YouTube-specific
+pattern (`FacebookVideo`, `FacebookMetricSnapshot`, ... — what ADR-003
+deliberately avoided) or (b) finally populate `ContentVideo`/`Publication`/
+`MetricSnapshot`, the cross-platform engine built in Sprint 1 and left
+intentionally unused until "a second platform integration exists" (ADR-003).
+That moment is now.
+**Decision:**
+1. Facebook and Instagram sync directly into the unified engine
+   (`ContentVideo`/`Publication`/`MetricSnapshot`) via a small `PlatformAdapter`
+   protocol (`app/services/platforms/base.py`) — one generic sync service
+   (`content_sync.py`), not per-platform copies. `MetricSnapshot` already has
+   `reach`/`impressions`/`shares`/`saves`/`watch_time_seconds`/
+   `followers_gained` — fields YouTube's Data API can't provide but Facebook/
+   Instagram Insights can, so the unified schema needed no changes.
+2. Comments get the same treatment: new generic `ContentCommentThread`/
+   `ContentComment` tables (FK'd to `Publication`, not `YoutubeVideo`), a generic
+   `content_comment_sync.py`/`content_comments_query.py`/`content_comment_actions.py`
+   trio mirroring the YouTube comment services' shape exactly, and reusing
+   `comment_intelligence.py` completely unchanged — it was already
+   platform-agnostic (pure functions over booleans/timestamps).
+3. **YouTube's existing dedicated pipeline is not touched or migrated.** It is
+   mature, tested across 8 prior releases, and live-verified against a real
+   channel — rewriting it onto the unified engine this release would be pure
+   regression risk for zero user-facing benefit. Instead, YouTube sync gets one
+   small additive step: after each sync, upsert corresponding
+   `ContentVideo`/`Publication`/`MetricSnapshot` rows too (a "dual-write
+   bridge," `youtube_unified_bridge.py`). This makes YouTube data ALSO visible
+   through the new generic multi-platform surfaces without changing a single
+   existing YouTube endpoint, schema, or test.
+4. A new generic API namespace (`/api/platforms/{platform}/...`) is the ONE
+   contract the frontend's generic Dashboard/Videos/Compare/Intelligence/
+   Community pages call, regardless of platform. For `platform=youtube`, these
+   generic endpoints are thin wrappers translating the existing YouTube-specific
+   service responses into the generic shape — reuse, not reimplementation. For
+   `facebook`/`instagram`, they're real implementations against the unified
+   engine.
+**Consequences:** RCC now has two YouTube surfaces on purpose: the original
+`/youtube/*` deep pages (full Sprint 5/6/0.7.x feature depth: sortable tables,
+history bucketing, quota-aware scheduler, dedicated comment engine) stay exactly
+as they are, and a new `/platforms/youtube` generic surface (baseline dashboard/
+videos/compare/intelligence/community, shared with Facebook/Instagram) is
+additive. Facebook and Instagram start at this shared baseline, not at
+YouTube's full depth — closing that gap is future work (see TODO.md), not a
+regression, since YouTube never had this generic surface before. Any future
+platform (TikTok) is a new `PlatformAdapter` implementation only — no new
+tables, no new sync service, no new API router.
+
+### ADR-021 — Meta OAuth uses one App ID/Secret for both Facebook and Instagram
+**Context:** Facebook Pages and Instagram professional accounts are both
+authorized through the same Meta Graph API OAuth flow — an Instagram Business/
+Creator account is only reachable via its linked Facebook Page, there is no
+separate "Instagram-only" OAuth app.
+**Decision:** One Meta OAuth app (`META_APP_ID`/`META_APP_SECRET`/
+`META_REDIRECT_URI` env vars, mirroring the existing `GOOGLE_CLIENT_SECRETS_FILE`
+pattern) drives `/api/platforms/meta/connect`. After consent, RCC lists the
+user's Facebook Pages (`GET /me/accounts`); for each Page it also resolves any
+linked Instagram professional account
+(`GET /{page-id}?fields=instagram_business_account`). Connecting a Facebook Page
+and connecting its Instagram account are two distinct `PlatformAccount` rows
+(`platform="facebook"` / `platform="instagram"`) sharing the underlying Page
+access token, following the existing `PlatformAccount` shape exactly (no new
+account model).
+**Consequences:** The user must create a Meta Developer App and provide its App
+ID/Secret before Facebook/Instagram can be connected — RCC cannot create this
+app on their behalf (same bootstrap step YouTube required with
+`google_client_secret.json`). Meta's App Review process may gate some
+permissions for accounts outside the developer's own — documented honestly in
+KNOWN_ISSUES.md rather than worked around.
+
+### ADR-022 — Optional Facebook Login for Business Configuration support (`META_LOGIN_CONFIG_ID`)
+**Context:** ADR-021 assumed the classic Facebook Login product (App Dashboard
+→ Facebook Login → Settings → scope-based Valid OAuth Redirect URIs). In
+practice, some Meta app types (Business-type apps in particular) only expose
+"Facebook Login for Business" in the console, which replaces that screen
+entirely with named **Configurations** — each Configuration pre-defines its own
+permission set server-side and is referenced by a Configuration ID at authorize
+time; the classic `scope` parameter has no effect once a Configuration is used,
+and sending it alongside `config_id` is not part of Meta's documented
+Configuration-based Login flow.
+**Decision:** `build_authorization_url()` (`app/integrations/meta/oauth.py`)
+branches on a new optional setting, `META_LOGIN_CONFIG_ID`: when set, the
+authorize URL sends `config_id` and omits `scope` entirely (the Configuration
+owns the permission set — see the exact 8 permissions in
+`app/integrations/meta/oauth.py::SCOPES`, which must be assigned to the
+Configuration in the Meta dashboard instead of requested at authorize time).
+When unset (the default), the classic `SCOPES`-based flow from ADR-021 is used
+unchanged. Nothing downstream of the authorize dialog changes either way — code
+exchange (`exchange_code_for_token`), long-lived token exchange
+(`exchange_for_long_lived_token`), Page listing (`list_pages`), and Instagram
+resolution (`get_linked_instagram_account`) are all identical regardless of
+which path built the initial redirect.
+**Consequences:** Setting up Meta credentials now has two possible dashboard
+paths depending on the app type Meta assigned — documented step-by-step for
+both in this session's guidance (not yet folded into a standing doc; a future
+pass could add a `docs/META_SETUP.md` walkthrough once verified against a real
+Configuration). `GraphClient`'s Graph API version was also decoupled from a
+hardcoded module constant in the same pass — it now takes `graph_api_version`
+per instance, sourced from `settings.meta_graph_api_version` in
+`app/api/platforms.py::_build_adapter`, matching what `oauth.py` already did
+(a real inconsistency found during Meta credential setup, not a regression
+introduced here — see `KNOWN_ISSUES.md`).
+
+### ADR-023 — Meta connect always shows an explicit Page picker; never auto-connects the first Page (Release 0.8.1)
+**Context:** ADR-021's original `meta_callback()` unconditionally picked
+`pages[0]` from `GET /me/accounts` and connected it immediately — documented at
+the time as a "first-Page-only" scope cut. In practice this is unsafe for
+anyone managing more than one Facebook Page: RCC would silently connect
+whichever Page happens to sort first, with no way to choose, and no visibility
+into which Page (or its linked Instagram account) was actually picked before
+it's a done deal.
+**Decision:** `meta_callback()` no longer writes a `PlatformAccount` at all. It
+fetches every Page the Meta account manages, eagerly resolves each Page's
+linked Instagram account (`get_linked_instagram_account`) so the picker can
+show it without a second round-trip, and stores the candidate list server-side
+keyed by an opaque `selection_id` (`app/services/meta_pending_selection.py`,
+in-memory, 10-minute TTL). It then redirects the browser to a new frontend
+screen, `/platforms/meta/select-page?selection=<id>`, which lists every Page
+(picture, name, category, follower count, linked Instagram username if any)
+and requires an explicit click before anything is connected. `POST
+/api/platforms/meta/select-page` is the only place a `PlatformAccount` row gets
+written, using the chosen Page's access token; the selection is single-use
+(`consume_selection`) on success, but deliberately left alive on a recoverable
+error (picking a Page with no linked Instagram while connecting Instagram) so
+the user can try a different Page from the same screen without restarting
+OAuth.
+
+The pending-selection store is deliberately **not** the session cookie used for
+the `/meta/connect` → `/meta/callback` CSRF `state` check: the picker is
+rendered by the frontend (a different port than the backend that owns that
+session cookie), and a cross-origin `fetch()` reliably carrying a cookie back
+depends on `FRONTEND_URL`/`NEXT_PUBLIC_API_URL`/`META_REDIRECT_URI` all using
+the exact same hostname (`localhost` vs `127.0.0.1` alone breaks it — see
+ADR-022's Configuration work for the same class of hostname pitfall). An opaque
+ID traveling in the redirect URL sidesteps that fragility entirely and works
+regardless of hostname choices.
+**Consequences:** In-memory + single-process + TTL-based, not a database table
+— acceptable because the data is genuinely ephemeral (nothing is real until a
+Page is chosen) and RCC runs one uvicorn process with no `--workers`; a backend
+restart mid-pick just means reconnecting, never a half-written account. Not yet
+verified against a real Meta account with multiple Pages — see
+`KNOWN_ISSUES.md`.
+
+### ADR-024 — Real Meta OAuth debugging: hostname-scoped session cookie, a credential leak, and `business_management`
+**Context:** The first real connection attempt against a live Meta account surfaced three distinct, unrelated bugs in sequence, each only reachable once real credentials existed (nothing in 0.8.0/0.8.1's fake-Graph-API test suite could have caught any of them — see KNOWN_ISSUES.md's standing caveat about that gap).
+
+**1. "Nieprawidłowy stan OAuth" on every attempt.** Root cause, confirmed via a temporary runtime diagnostic (`_log_oauth_diagnostics` in `app/api/platforms.py`, kept permanently — cheap, and this class of bug can recur) and reproduced deterministically with `curl`: `NEXT_PUBLIC_API_URL` (docker-compose.yml) was `http://127.0.0.1:8000` while `META_REDIRECT_URI` was `http://localhost:8000/...`. The session cookie carrying the CSRF `state` is host-only (no `Domain=` set — Starlette's `SessionMiddleware` default); `127.0.0.1` and `localhost` are different hosts for cookie storage even though both resolve to loopback. The cookie set during `/meta/connect` never reached `/meta/callback`. **Fix:** every URL a browser touches during this flow — `NEXT_PUBLIC_API_URL`, `FRONTEND_URL`, `META_REDIRECT_URI` — must share one hostname. Standardized on `localhost` (documented in `.env.example` and inline in `docker-compose.yml`).
+
+**2. Credential leak in logs.** Reproducing bug 1 with a deliberately-fake authorization code surfaced a second, independent bug: `oauth.py`'s token-exchange calls and `client.py`'s `GraphClient` both send secrets (`client_secret`, access tokens) as query parameters (Meta requires this), and on failure, `httpx.HTTPStatusError`'s message embeds the full request URL verbatim. The App Secret appeared in cleartext in `docker compose logs`. **Fix:** `MetaOAuthError` (oauth.py) and a hardened `GraphAPIError` (client.py) — both raised with `from None` and a fixed, credential-free message (`f"...failed with HTTP {status_code}"`), never `str(exc)` or the chained original exception. Regression-tested (`test_meta_oauth.py`, `test_meta_graph_client.py`) by asserting the literal secret string never appears in the raised exception. **The exposed App Secret was rotated** — this is an operational action taken outside the codebase, not a code change.
+
+**3. `/me/accounts` returns `{"data": []}` despite confirmed Page ownership.** Runtime diagnostics (`GET /me/permissions`, `GET /debug_token`) proved: the token is a genuine `USER`-type token (not a Page/App token — `get_me()` resolves a real personal name, which a Page token could not); `pages_show_list` is granted; but it is the *only* one of RCC's 9 requested permissions actually granted — the Facebook Login for Business Configuration was not attaching the rest. Cross-referenced against Meta's developer community (multiple independent reports of the identical symptom: `pages_show_list` granted, Page confirmed Business-Portfolio-owned, `/me/accounts` empty) converging on one specific missing permission: **`business_management`**. Meta's documented behavior is that a Page living inside a Business Portfolio is not returned by `/me/accounts` on `pages_show_list` alone, regardless of the user's actual admin level on that Page. **Fix:** added `business_management` to `SCOPES` (oauth.py) — requires the corresponding dashboard action of adding it to the Configuration's Permissions step (same App Dashboard flow as the other 8 permissions, not a Business Suite/Business Manager setting). `/me/accounts` remains the correct endpoint; switching to Business Manager's `owned_pages`/`client_pages` endpoints was considered and rejected as unnecessary — multiple corroborating reports confirm `/me/accounts` starts returning Pages correctly once `business_management` is granted, and introducing a second Page-listing code path for no functional gain would be pure added complexity.
+
+**Consequences:** The empty-Pages error message (`meta_callback`) no longer claims the account manages no Pages — it inspects `GET /me/permissions` and returns one of two specific, actionable messages (missing `pages_show_list` vs. granted-but-nothing-shared), since the original message was proven actively misleading in exactly this scenario. After the real Facebook flow was verified, the diagnostics were reduced to compact credential-free facts (token type/scopes/validity, Page count/tasks and whether Instagram is linked); raw Page/profile payloads are no longer logged. `_log_oauth_diagnostics` remains as cheap defense-in-depth for the hostname-mismatch class of bug specifically.
+
+### ADR-025 — Instagram uses the linked-Page professional-account flow and one Meta sync orchestrator (Release 0.8.3)
+**Context:** Instagram API with Facebook Login exposes a Business or Creator
+professional account through its linked Facebook Page. The 0.8.0 adapter existed,
+but the live Configuration granted no Instagram permissions, Page selection did
+not start a sync, media/comments were only single-page reads, and one unsupported
+insight metric could erase all otherwise-valid insight data.
+
+**Decision:** RCC discovers `instagram_business_account` inline on
+the selected Page after a deliberately minimal `GET /me/accounts` Page-list
+request. The real Meta callback proved that expanding optional Instagram
+profile fields inside `/me/accounts` can make Meta reject the entire Page list
+with HTTP 400. RCC therefore resolves only `instagram_business_account` on the
+Page first and enriches the returned Instagram id in a separate, non-critical
+request; a 400/403 during display-only enrichment keeps the id and never blocks
+`PlatformAccount` creation.
+Connection requires the complete least-privilege set used by the shipped feature:
+`pages_show_list`, `business_management`, `pages_read_engagement`,
+`instagram_basic`, `instagram_manage_comments`, and
+`read_insights`. The active Facebook Login for Business Configuration exposes
+`read_insights`; RCC therefore validates the capability Meta actually grants
+instead of requiring the unavailable `instagram_manage_insights` name. Initial,
+manual and scheduled Facebook/Instagram
+sync all call `sync_meta_account()`; the opt-in in-process Meta scheduler mirrors
+ADR-015 and never introduces a second implementation. Media, comments and replies
+follow cursor pagination. Insights are fetched independently per metric, and
+unsupported metrics are unavailable rather than inferred (especially: reach is
+never presented as views).
+
+**Consequences:** Editing a Facebook Login for Business Configuration requires
+removing the old Business Integration grant and reconnecting before the new scopes
+appear on the token. A successfully-created account is kept connected if its first
+sync fails, with an explicit warning and a retry button; OAuth is not needlessly
+repeated for a transient data failure. Meta automatic sync stays disabled by
+default. Uvicorn raw access logs are disabled because OAuth callback query strings
+contain one-time credentials; compact credential-free diagnostics remain.

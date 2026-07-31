@@ -9,6 +9,7 @@ import { PerformanceLabelBadge } from "./performance-label-badge";
 import { VideoPicker } from "./video-picker";
 import { VideoTable } from "./video-table";
 import { downloadCsv } from "../lib/csv-export";
+import { emptyScoreBreakdown } from "../lib/content-score";
 import type { YoutubeChannelVideo } from "../lib/youtube-api";
 import {
   MIN_VIDEOS_FOR_SCORE,
@@ -19,6 +20,7 @@ import {
   truncateTitle,
   withDerivedMetrics,
   type ScoredVideo,
+  type SortKey,
   type TableSort,
 } from "../lib/youtube-metrics";
 
@@ -54,7 +56,9 @@ export function YoutubeCompare({ videos }: { videos: YoutubeChannelVideo[] }) {
   const derived = useMemo(() => selectedVideos.map((video) => withDerivedMetrics(video)), [selectedVideos]);
   const hasEnoughForScore = derived.length >= MIN_VIDEOS_FOR_SCORE;
   const scored = useMemo(() => (hasEnoughForScore ? computeCompositeScores(derived) : []), [derived, hasEnoughForScore]);
-  const cards = hasEnoughForScore ? scored : derived.map((video) => ({ ...video, performance_score: 0, score_breakdown: { views: 0, views_per_day: 0, engagement: 0 } }));
+  const cards = hasEnoughForScore
+    ? scored
+    : derived.map((video) => ({ ...video, performance_score: 0, score_breakdown: emptyScoreBreakdown() }));
 
   const overallWinner = winnerBy(scored, (v) => v.performance_score);
   const viewsWinner = winnerBy(cards, (v) => v.views);
@@ -187,7 +191,7 @@ export function YoutubeCompare({ videos }: { videos: YoutubeChannelVideo[] }) {
               ))}
             </section>
           ) : (
-            <VideoTable
+            <VideoTable<ScoredVideo, SortKey>
               rows={tableRows}
               keyField={(video) => video.youtube_video_id}
               sort={tableSort}

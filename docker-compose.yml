@@ -31,7 +31,11 @@ services:
   frontend:
     build: ./frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+      # Must share the exact same hostname as META_REDIRECT_URI (.env) — the
+      # Meta OAuth session cookie is host-only (no Domain= set), so a mismatch
+      # here (e.g. 127.0.0.1 vs localhost) silently breaks the OAuth state
+      # check with "Nieprawidłowy stan OAuth" (ADR-024).
+      NEXT_PUBLIC_API_URL: http://localhost:8000
       INTERNAL_API_URL: http://backend:8000
     ports: ["3000:3000"]
     depends_on: [backend]

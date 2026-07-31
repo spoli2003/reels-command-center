@@ -28,6 +28,7 @@ from app.models.integration import PlatformAccount, YoutubeChannel
 from app.services.youtube_client_factory import build_youtube_client
 from app.services.youtube_comment_sync import CommentSyncAlreadyRunningError, sync_youtube_comments
 from app.services.youtube_sync import SyncAlreadyRunningError, sync_youtube
+from app.services.youtube_unified_bridge import bridge_all_youtube_comments, bridge_all_youtube_videos
 
 logger = logging.getLogger("youtube_scheduler")
 
@@ -54,6 +55,7 @@ def _run_once_sync() -> None:
             channel = None
         else:
             logger.info("Automatyczna synchronizacja YouTube zakończona pomyślnie.")
+            bridge_all_youtube_videos(db, account, channel)
 
         if channel is None:
             channel = db.scalar(select(YoutubeChannel).where(YoutubeChannel.account_id == account.id))
@@ -65,6 +67,7 @@ def _run_once_sync() -> None:
         try:
             sync_youtube_comments(db, channel, client, mode="incremental")
             logger.info("Automatyczna synchronizacja komentarzy zakończona pomyślnie.")
+            bridge_all_youtube_comments(db, account)
         except CommentSyncAlreadyRunningError:
             logger.info("Automatyczna synchronizacja komentarzy pominięta — inna synchronizacja komentarzy już trwa.")
         except Exception:

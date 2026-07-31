@@ -28,6 +28,7 @@ from app.services.youtube_client_factory import NotConnectedError, build_youtube
 from app.services.youtube_comment_actions import CommentActionError, delete_reply, edit_reply, post_reply
 from app.services.youtube_comment_sync import CommentSyncAlreadyRunningError, sync_youtube_comments
 from app.services.youtube_comments_query import build_inbox_rows, build_inbox_summary, filter_and_sort_rows
+from app.services.youtube_unified_bridge import bridge_all_youtube_comments
 
 router = APIRouter(prefix="/api/integrations/youtube", tags=["YouTube Comments"])
 
@@ -81,6 +82,7 @@ def _thread_to_read(row: dict) -> CommentThreadRead:
         updated_at=thread.updated_at,
         total_reply_count=thread.total_reply_count,
         can_reply=thread.can_reply,
+        is_own_thread=row["is_own_thread"],
         conversation_state=row["conversation_state"].value,
         last_message_at=row["last_message_at"],
         is_likely_question=row["is_likely_question"],
@@ -93,7 +95,7 @@ def _thread_to_read(row: dict) -> CommentThreadRead:
 
 @router.get("/comments", response_model=CommentInboxRead)
 def list_comments(
-    quick: Optional[str] = Query(None, description="new|waiting|resolved|closed|unanswered|answered|questions|recent|with_replies|highly_liked"),
+    quick: Optional[str] = Query(None, description="mine|new|waiting|resolved|closed|unanswered|answered|questions|recent|with_replies|highly_liked"),
     video: Optional[str] = Query(None, description="Filter by youtube_video_id"),
     author: Optional[str] = Query(None, description="Filter by author display name substring"),
     q: Optional[str] = Query(None, description="Search comment text or author"),
@@ -137,6 +139,7 @@ def sync_comments(payload: CommentSyncTrigger, db: Session = Depends(get_db)):
         run = sync_youtube_comments(db, channel, client, mode=payload.mode, video_id=video_row_id)
     except CommentSyncAlreadyRunningError as exc:
         raise HTTPException(409, str(exc)) from exc
+    bridge_all_youtube_comments(db, account)
     return {
         "status": run.status,
         "threads_discovered": run.threads_discovered,

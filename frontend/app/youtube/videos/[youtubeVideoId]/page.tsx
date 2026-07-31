@@ -15,6 +15,7 @@ import { ExternalLink, youtubeWatchUrl } from "../../../../components/external-l
 import { InsightsList } from "../../../../components/insights-list";
 import { PerformanceLabelBadge } from "../../../../components/performance-label-badge";
 import { RankedVideoList } from "../../../../components/ranked-video-list";
+import { ScoreBreakdownDetails } from "../../../../components/score-breakdown";
 import { SyncStatusLine } from "../../../../components/sync-status-line";
 import { UnavailableMetricsCard } from "../../../../components/unavailable-metrics-card";
 import { VideoNavKeyboard } from "../../../../components/video-nav-keyboard";
@@ -169,6 +170,7 @@ export default async function YoutubeVideoDetailPage({
         active="/youtube"
         tabs={[
           { href: "/youtube", label: "Dashboard" },
+          { href: "/youtube/videos", label: "Materiały" },
           { href: "/youtube/compare", label: "Porównanie" },
           { href: "/youtube/intelligence", label: "Co dalej?" },
           { href: "/youtube/community", label: "Komentarze" },
@@ -264,6 +266,18 @@ export default async function YoutubeVideoDetailPage({
           tooltip="Liczba pełnych dni od daty publikacji do teraz."
         />
       </StatsGrid>
+
+      {targetScored ? (
+        <section className="libraryPanel scoreDetailPanel">
+          <div className="libraryHeading">
+            <div>
+              <p className="eyebrow">PUNKTACJA</p>
+              <h2>Co zbudowało wynik {Math.round(targetScored.performance_score)}/100?</h2>
+            </div>
+          </div>
+          <ScoreBreakdownDetails breakdown={targetScored.score_breakdown} defaultOpen />
+        </section>
+      ) : null}
 
       <div className="statsGroupLabel">Wzrost w czasie</div>
       <StatsGrid>

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -188,9 +187,6 @@ export function YoutubePanel() {
             </div>
           ) : null}
 
-          <Link className="textLink" href="/youtube" style={{ display: "inline-block", marginTop: 14 }}>
-            Pełny dashboard analityczny →
-          </Link>
         </>
       )}
     </section>

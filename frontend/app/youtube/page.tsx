@@ -1,63 +1,36 @@
-import Link from "next/link";
-
 import { AppShell } from "../../components/app-shell";
-import { PlatformSubNav } from "../../components/platform-sub-nav";
-import { SyncStatusLine } from "../../components/sync-status-line";
+import { PlatformExperienceHeader } from "../../components/platform-experience-header";
 import { YoutubeDashboard } from "../../components/youtube-dashboard";
+import { createPlatformOverviewApi, type PlatformKeyOrAll } from "../../lib/platform-api";
 import { createYoutubeApi } from "../../lib/youtube-api";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
 
 export default async function YoutubeDashboardPage() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [summary, status, videos, viewsSeries, likesSeries, commentsSeries, channelHistory] = await Promise.all([
+  const [summary, videos, viewsSeries, likesSeries, commentsSeries, channelHistory, summaries] = await Promise.all([
     api.getSummary(),
-    api.getStatus(),
     api.getVideos(),
     api.getTimeseries("views"),
     api.getTimeseries("likes"),
     api.getTimeseries("comments"),
     api.getChannelHistory(),
+    createPlatformOverviewApi(INTERNAL_API_URL).listPlatforms(),
   ]);
+  const connectedPlatforms: Partial<Record<PlatformKeyOrAll, boolean>> = {};
+  for (const item of summaries) connectedPlatforms[item.platform] = item.connected;
 
-  const connected = summary !== null && videos.length > 0;
+  const hasConnectedData = summary !== null && videos.length > 0;
 
   return (
     <AppShell active="/youtube">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">YOUTUBE / ANALYTICS</p>
-          <h1>Dashboard YouTube</h1>
-          <p className="muted">
-            {summary?.channel_title ?? "Kanał niepołączony"}
-            {summary ? (
-              <>
-                {" · "}
-                <SyncStatusLine status={status} />
-              </>
-            ) : null}
-          </p>
-        </div>
-        <Link className="primaryButton" href="/youtube/compare">
-          Porównaj filmy
-        </Link>
-      </header>
+      <PlatformExperienceHeader platform="youtube" section="" connected={connectedPlatforms} title="YouTube" description={summary?.channel_title ?? "Kanał niepołączony"} />
 
-      <PlatformSubNav
-        active="/youtube"
-        tabs={[
-          { href: "/youtube", label: "Dashboard" },
-          { href: "/youtube/compare", label: "Porównanie" },
-          { href: "/youtube/intelligence", label: "Co dalej?" },
-          { href: "/youtube/community", label: "Komentarze" },
-        ]}
-      />
-
-      {!connected || !summary ? (
+      {!hasConnectedData || !summary ? (
         <div className="emptyState">
           <h3>Brak zsynchronizowanych danych</h3>
           <p>
-            Połącz i zsynchronizuj kanał YouTube z poziomu <Link href="/">strony głównej</Link>, aby zobaczyć tu pełną analitykę.
+            Połącz i zsynchronizuj kanał YouTube w sekcji Synchronizacja, aby zobaczyć tu pełną analitykę.
           </p>
         </div>
       ) : (

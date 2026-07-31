@@ -32,6 +32,7 @@ class CommentThreadRead(BaseModel):
     updated_at: datetime
     total_reply_count: int
     can_reply: bool
+    is_own_thread: bool
     # conversation_state: "new" | "waiting" | "resolved" | "closed" — see
     # comment_intelligence.determine_conversation_state (ADR-019). Replaces the
     # old, buggy is_answered field (Release 0.7.1 / Part 1).
@@ -46,6 +47,7 @@ class CommentThreadRead(BaseModel):
 
 class CommentInboxSummary(BaseModel):
     total_visible: int
+    own_threads_count: int
     new_count: int
     waiting_count: int
     resolved_count: int

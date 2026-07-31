@@ -5,7 +5,7 @@
 ```
 Workspace
    ↓
-Platforms       (YouTube today; Facebook / Instagram / TikTok planned)
+Platforms       (YouTube, Facebook, Instagram live; TikTok planned)
    ↓
 Channels        (one connected account per platform)
    ↓
@@ -25,8 +25,10 @@ CRM             (not yet built — links content performance to leads/clients)
 ```
 
 **Where this stands today:** everything from Platforms down through Community
-Inbox is implemented for YouTube. Workspace (multi-tenancy), AI Engine, and CRM
-are future layers — see below and [TODO.md](./TODO.md).
+Inbox is implemented for YouTube at full depth, and for Facebook/Instagram at
+a shared generic baseline (Release 0.8.0, ADR-020 — see below). Workspace
+(multi-tenancy), AI Engine, and CRM are future layers — see below and
+[TODO.md](./TODO.md).
 
 ### Workspace (future)
 
@@ -39,8 +41,14 @@ every query below it.
 
 `PlatformAccount` (OAuth credentials, one row per connected account) →
 `YoutubeChannel` (channel identity + current stats: subscriber/view/video count).
-Platform-specific today; a Facebook/Instagram/TikTok integration would add its own
-`*Account`/`*Channel`-shaped tables following the same pattern, not modify these.
+This YouTube-specific pair is untouched by Release 0.8.0. Facebook and
+Instagram deliberately did NOT get their own `*Account`/`*Channel`-shaped
+tables (ADR-020 rejected that path, which ADR-003 had originally anticipated
+here) — a Facebook Page or Instagram account IS its `PlatformAccount` row
+directly (no separate Channel table), and syncs straight into the unified
+`ContentVideo`/`Publication`/`MetricSnapshot` engine below instead. A future
+TikTok integration follows the same unified-engine path, not this section's
+original per-platform-table plan.
 
 ### Videos → Historical Snapshots
 
@@ -98,9 +106,12 @@ intelligence/
 
 `youtube_intelligence_adapter.py` is the **only** YouTube-specific file in this path:
 it converts `YoutubeVideo` + snapshot rows into `ContentItem`, calls the engine, and
-re-attaches display fields (title, thumbnail) for the API response. A future
-Facebook/Instagram/TikTok adapter is the same shape — nothing under `intelligence/`
-would change.
+re-attaches display fields (title, thumbnail) for the API response.
+`content_intelligence_adapter.py` (Release 0.8.0) is the confirming second
+adapter — it converts `Publication`/`MetricSnapshot` rows into the same
+`ContentItem` shape for Facebook/Instagram (and bridged YouTube), calling the
+identical engine. Exactly as predicted: nothing under `intelligence/` changed.
+A future TikTok adapter is the same shape again.
 
 ### Community Inbox (Release 0.7.0)
 
@@ -219,6 +230,22 @@ Every sync run records `videos_discovered`/`videos_updated`/`snapshots_created`/
 `YoutubeChannelSnapshot` per run, so sync effects are fully auditable — surfaced in
 the UI's sync panel including automatic-scheduler status and the next planned run.
 
+Release 0.8.3 adds the equivalent opt-in Meta task in
+`backend/app/services/meta_scheduler.py` (`META_SYNC_ENABLED`,
+`META_SYNC_INTERVAL_HOURS`). It synchronizes every connected Facebook/Instagram
+`PlatformAccount`, validates the live token and required scopes first, and calls
+the same `sync_meta_account()` orchestration service used by the initial and
+manual sync paths. Facebook and Instagram failures are isolated from each other;
+there is no second scheduler-only implementation of content or comment sync.
+
+Release 0.8.4b adds a platform-neutral synchronization facade. `GET
+/api/synchronization` combines connection state, schedules and the existing
+`SyncRun` audit trail; `POST /api/synchronization/sync-all` invokes the existing
+YouTube and Meta orchestration paths for every connected account. Each platform
+is isolated: one failed provider is reported as a partial aggregate result and
+does not prevent the remaining connected accounts from synchronizing. No second
+provider-specific sync implementation was introduced.
+
 ## Integrations
 
 - **YouTube Data API v3** (`google-api-python-client` + `google-auth-oauthlib`, PKCE
@@ -230,6 +257,12 @@ the UI's sync panel including automatic-scheduler status and the next planned ru
   all require this separate API and different OAuth scopes. RCC is honest about this
   gap in the UI rather than fabricating these numbers (see
   [UI_GUIDELINES.md](./UI_GUIDELINES.md)).
+- **Meta Graph API / Instagram API with Facebook Login** — one Meta app and one
+  Facebook Login for Business Configuration connect Facebook Pages and their
+  linked Instagram Business or Creator accounts. Both write through the shared
+  `ContentVideo`/`Publication`/`MetricSnapshot` and Community models. Instagram
+  media, comments and replies use cursor pagination; per-media insights are
+  availability-driven and never inferred from another metric.
 
 ## Future multi-workspace support
 

@@ -1,14 +1,16 @@
 import { Suspense } from "react";
 
 import { AppShell } from "../../components/app-shell";
-import { VideoLibrary } from "../../components/video-library";
-import { createYoutubeApi } from "../../lib/youtube-api";
+import { UnifiedVideoLibrary } from "../../components/unified-video-library";
+import { createPlatformApi, createPlatformOverviewApi } from "../../lib/platform-api";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
 
 export default async function VideosPage() {
-  const api = createYoutubeApi(INTERNAL_API_URL);
-  const videos = await api.getVideos();
+  const [videos, platforms] = await Promise.all([
+    createPlatformApi(INTERNAL_API_URL, "all").getVideos(),
+    createPlatformOverviewApi(INTERNAL_API_URL).listPlatforms(),
+  ]);
   return (
     <AppShell active="/videos">
       <header className="topbar">
@@ -21,7 +23,7 @@ export default async function VideosPage() {
         </div>
       </header>
       <Suspense fallback={null}>
-        <VideoLibrary initialVideos={videos} />
+        <UnifiedVideoLibrary initialVideos={videos} platforms={platforms} />
       </Suspense>
     </AppShell>
   );

@@ -1,36 +1,20 @@
 import { AppShell } from "../../../components/app-shell";
 import { CommunityInbox } from "../../../components/community-inbox";
-import { PlatformSubNav } from "../../../components/platform-sub-nav";
-import { SyncStatusLine } from "../../../components/sync-status-line";
+import { PlatformExperienceHeader } from "../../../components/platform-experience-header";
+import { createPlatformOverviewApi, type PlatformKeyOrAll } from "../../../lib/platform-api";
 import { createYoutubeApi } from "../../../lib/youtube-api";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
 
 export default async function YoutubeCommunityPage() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [videos, quickReplies, status] = await Promise.all([api.getVideos(), api.getQuickReplies(), api.getStatus()]);
+  const [videos, quickReplies, summaries] = await Promise.all([api.getVideos(), api.getQuickReplies(), createPlatformOverviewApi(INTERNAL_API_URL).listPlatforms()]);
+  const connected: Partial<Record<PlatformKeyOrAll, boolean>> = {};
+  for (const item of summaries) connected[item.platform] = item.connected;
 
   return (
     <AppShell active="/youtube">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">YOUTUBE / KOMENTARZE</p>
-          <h1>Skrzynka komentarzy</h1>
-          <p className="muted">
-            Przeglądaj, oceniaj priorytet i odpowiadaj na komentarze YouTube bez opuszczania RCC. <SyncStatusLine status={status} />
-          </p>
-        </div>
-      </header>
-
-      <PlatformSubNav
-        active="/youtube/community"
-        tabs={[
-          { href: "/youtube", label: "Dashboard" },
-          { href: "/youtube/compare", label: "Porównanie" },
-          { href: "/youtube/intelligence", label: "Co dalej?" },
-          { href: "/youtube/community", label: "Komentarze" },
-        ]}
-      />
+      <PlatformExperienceHeader platform="youtube" section="community" connected={connected} title="Skrzynka komentarzy — YouTube" description="Przeglądaj, oceniaj priorytet i odpowiadaj na komentarze bez opuszczania RCC." />
 
       {videos.length === 0 ? (
         <div className="emptyState">

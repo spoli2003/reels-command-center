@@ -1,4 +1,7 @@
 import type { YoutubeChannelVideo } from "./youtube-api";
+import { computeExplainableScores, minMaxNormalize, type ScoreBreakdown } from "./content-score";
+
+export { minMaxNormalize };
 
 export type DerivedVideo = YoutubeChannelVideo & {
   days_since_published: number;
@@ -25,7 +28,8 @@ export function withDerivedMetrics(video: YoutubeChannelVideo, now: number = Dat
 }
 
 export function truncateTitle(title: string, maxLength = 42): string {
-  return title.length > maxLength ? `${title.slice(0, maxLength - 1)}…` : title;
+  const characters = Array.from(title);
+  return characters.length > maxLength ? `${characters.slice(0, maxLength - 1).join("")}…` : title;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,37 +227,16 @@ export function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/** Returns 100 for every value when the set has no variance (safe — doesn't distort relative order on other metrics). */
-export function minMaxNormalize(value: number, min: number, max: number): number {
-  if (max === min) return 100;
-  return ((value - min) / (max - min)) * 100;
-}
-
 // ---------------------------------------------------------------------------
 // Composite performance score — relative to whatever set it's computed over
 // ---------------------------------------------------------------------------
 
 export const MIN_VIDEOS_FOR_SCORE = 3;
 
-export type ScoreBreakdown = { views: number; views_per_day: number; engagement: number };
 export type ScoredVideo = DerivedVideo & { performance_score: number; score_breakdown: ScoreBreakdown };
 
 export function computeCompositeScores(videos: DerivedVideo[]): ScoredVideo[] {
-  if (videos.length === 0) return [];
-  const viewsValues = videos.map((v) => v.views);
-  const vpdValues = videos.map((v) => v.views_per_day);
-  const erValues = videos.map((v) => v.engagement_rate);
-  const viewsRange: [number, number] = [Math.min(...viewsValues), Math.max(...viewsValues)];
-  const vpdRange: [number, number] = [Math.min(...vpdValues), Math.max(...vpdValues)];
-  const erRange: [number, number] = [Math.min(...erValues), Math.max(...erValues)];
-
-  return videos.map((video) => {
-    const viewsScore = minMaxNormalize(video.views, viewsRange[0], viewsRange[1]);
-    const vpdScore = minMaxNormalize(video.views_per_day, vpdRange[0], vpdRange[1]);
-    const erScore = minMaxNormalize(video.engagement_rate, erRange[0], erRange[1]);
-    const performance_score = vpdScore * 0.5 + erScore * 0.3 + viewsScore * 0.2;
-    return { ...video, performance_score, score_breakdown: { views: viewsScore, views_per_day: vpdScore, engagement: erScore } };
-  });
+  return computeExplainableScores(videos);
 }
 
 // ---------------------------------------------------------------------------

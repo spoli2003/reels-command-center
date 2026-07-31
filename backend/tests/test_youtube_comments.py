@@ -15,7 +15,7 @@ from app.models.integration import PlatformAccount, SyncRun, YoutubeChannel, You
 from app.services.comment_intelligence import ConversationState, comment_priority_score, determine_conversation_state, is_likely_question
 from app.services.youtube_comment_actions import CommentActionError, delete_reply, edit_reply, post_reply
 from app.services.youtube_comment_sync import CommentSyncAlreadyRunningError, sync_youtube_comments
-from app.services.youtube_comments_query import build_inbox_rows, filter_and_sort_rows
+from app.services.youtube_comments_query import build_inbox_rows, build_inbox_summary, filter_and_sort_rows
 
 NOW = "2026-07-29T12:00:00Z"
 
@@ -355,7 +355,7 @@ def test_conversation_state_matrix():
         db.close()
 
 
-def test_self_authored_top_level_comment_is_resolved_not_new():
+def test_self_authored_top_level_comment_is_separated_from_viewer_inbox():
     """Bug found via live verification (Release 0.7.1 / Part 8): a channel's own
     pinned top-level comment (a common creator practice, e.g. linking the full
     video) has zero replies, but must NOT be flagged "New / needs reply" — the
@@ -373,6 +373,18 @@ def test_self_authored_top_level_comment_is_resolved_not_new():
         row = next(r for r in rows if r["thread"].platform_thread_id == "thread-pinned")
         assert row["conversation_state"] == ConversationState.RESOLVED
         assert row["priority_score"] == 0.0
+        assert row["is_own_thread"] is True
+
+        # Own pinned/promotional comments stay synchronized, but no longer
+        # pollute the actionable viewer inbox or its KPI summary.
+        assert filter_and_sort_rows(rows) == []
+        assert filter_and_sort_rows(rows, quick="all") == []
+        assert [r["thread"].platform_thread_id for r in filter_and_sort_rows(rows, quick="mine")] == ["thread-pinned"]
+        summary = build_inbox_summary(rows)
+        assert summary["total_visible"] == 0
+        assert summary["own_threads_count"] == 1
+        assert summary["resolved_count"] == 0
+        assert summary["questions_count"] == 0
     finally:
         db.close()
 

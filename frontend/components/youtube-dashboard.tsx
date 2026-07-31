@@ -6,13 +6,17 @@ import { useMemo } from "react";
 
 import { ChartCard } from "./charts/chart-card";
 import { LineChartViz } from "./charts/line-chart";
+import { AudienceGain } from "./audience-gain";
 import { DashboardFilterBar } from "./dashboard-filter-bar";
 import { ExternalLink, youtubeWatchUrl } from "./external-link";
 import { PerformanceLabelBadge } from "./performance-label-badge";
+import { PlatformBadge } from "./platform-badge";
 import { RankedVideoList } from "./ranked-video-list";
+import { ScoreBreakdownDetails } from "./score-breakdown";
 import { StatCard, StatsGrid } from "./stat-card";
 import { SuggestionsList } from "./suggestions-list";
 import { VideoTable } from "./video-table";
+import { historyReadiness, MIN_HISTORY_DAYS } from "../lib/history-readiness";
 import type { YoutubeChannelHistory, YoutubeChannelVideo, YoutubeSummary, YoutubeTimeseriesPoint } from "../lib/youtube-api";
 import {
   ATTENTION_DEFAULT_WINDOW_DAYS,
@@ -87,7 +91,7 @@ export function YoutubeDashboard({
   const search = searchParams.get("q") ?? "";
   const sortKey: SortKey = isSortKey(searchParams.get("sort")) ? (searchParams.get("sort") as SortKey) : "published_at";
   const sortDirection: SortDirection = isSortDirection(searchParams.get("dir")) ? (searchParams.get("dir") as SortDirection) : "desc";
-  const sort: TableSort = { key: sortKey, direction: sortDirection };
+  const sort: TableSort = useMemo(() => ({ key: sortKey, direction: sortDirection }), [sortKey, sortDirection]);
   const minViews = searchParams.get("minViews") ? Number(searchParams.get("minViews")) : null;
   const maxViews = searchParams.get("maxViews") ? Number(searchParams.get("maxViews")) : null;
   const quickFilter: QuickFilter = isQuickFilter(searchParams.get("quick")) ? (searchParams.get("quick") as QuickFilter) : "all";
@@ -170,6 +174,16 @@ export function YoutubeDashboard({
     likes: likesByDate.get(date) ?? 0,
     comments: commentsByDate.get(date) ?? 0,
   }));
+  const historyState = historyReadiness({
+    views: viewsSeries,
+    likes: likesSeries,
+    comments: commentsSeries,
+    audience: channelHistory?.buckets ?? [],
+  });
+  const historyStartedLabel = historyState.firstDate
+    ? new Intl.DateTimeFormat("pl-PL", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${historyState.firstDate}T12:00:00`))
+    : null;
+  const signedCompact = (value: number) => `${value >= 0 ? "+" : "−"}${compact(Math.abs(value))}`;
 
   return (
     <>
@@ -227,6 +241,30 @@ export function YoutubeDashboard({
         activeLabel={activeLabel}
       />
 
+      {!historyState.ready ? (
+        <section className="historyWarmup" aria-label="Zbieranie historii kanału">
+          <div className="historyWarmupHeader">
+            <div>
+              <p className="eyebrow">HISTORIA DOPIERO POWSTAJE</p>
+              <h2>Nie pokazujemy wykresów na siłę</h2>
+              <p className="muted">
+                {historyStartedLabel ? `RCC zbiera dane od ${historyStartedLabel}. ` : "RCC zaczyna zbierać dane. "}
+                Miarodajne trendy pojawią się automatycznie po co najmniej {MIN_HISTORY_DAYS} dniach.
+              </p>
+            </div>
+            <strong className="historyWarmupCount">{historyState.trackedDays}/{MIN_HISTORY_DAYS} dni</strong>
+          </div>
+          <div className="historyWarmupTrack" role="progressbar" aria-valuemin={0} aria-valuemax={MIN_HISTORY_DAYS} aria-valuenow={historyState.trackedDays}>
+            <span style={{ width: `${Math.min(100, (historyState.trackedDays / MIN_HISTORY_DAYS) * 100)}%` }} />
+          </div>
+          <div className="historyWarmupStats">
+            <div><span>Przyrost wyświetleń</span><strong>{signedCompact(historyState.viewsGain)}</strong></div>
+            <div><span>Przyrost interakcji</span><strong>{signedCompact(historyState.engagementGain)}</strong></div>
+            <div><span>Przyrost subskrybentów</span><strong>{signedCompact(historyState.subscribersGain)}</strong></div>
+            <div><span>Do pierwszego trendu</span><strong>{historyState.remainingDays} dni</strong></div>
+          </div>
+        </section>
+      ) : (
       <section className="chartsGrid">
         <ChartCard
           title="Wyświetlenia w czasie"
@@ -274,6 +312,7 @@ export function YoutubeDashboard({
           </ChartCard>
         ) : null}
       </section>
+      )}
 
       <section className="libraryPanel">
         <div className="libraryHeading">
@@ -285,6 +324,7 @@ export function YoutubeDashboard({
               <strong>Wynik względny w aktualnie wybranym zestawie filmów.</strong>
             </p>
           </div>
+          <Link href="/faq/punktacja" className="buttonLink">Jak działa punktacja? →</Link>
         </div>
         <RankedVideoList
           items={bestVideos}
@@ -294,11 +334,13 @@ export function YoutubeDashboard({
               ? "Brak filmów pasujących do wybranych filtrów."
               : `Za mało filmów w wybranym zakresie (min. ${MIN_VIDEOS_FOR_SCORE}), aby obliczyć wiarygodny ranking.`
           }
+          renderMeta={() => <PlatformBadge platform="youtube" />}
           renderMetrics={(video) => (
             <>
               <span>{compact(video.views)} wyśw.</span>
               <span>{video.views_per_day.toLocaleString("pl-PL")}/dzień</span>
               <span>{video.engagement_rate.toFixed(2)}% ER</span>
+              <AudienceGain platform="youtube" value={video.followers_gained} />
             </>
           )}
           renderBadge={(video) => {
@@ -309,7 +351,12 @@ export function YoutubeDashboard({
               </span>
             );
           }}
-          renderExtra={(video) => <p className="rankedExplanation">{explainRanking(video, channelMedians)}</p>}
+          renderExtra={(video) => (
+            <>
+              <p className="rankedExplanation">{explainRanking(video, channelMedians)}</p>
+              <ScoreBreakdownDetails breakdown={video.score_breakdown} />
+            </>
+          )}
           renderActions={(video) => <ExternalLink href={youtubeWatchUrl(video.youtube_video_id)} label="Obejrzyj na YouTube" />}
         />
       </section>
@@ -385,7 +432,7 @@ export function YoutubeDashboard({
             </p>
           </div>
         </div>
-        <VideoTable
+        <VideoTable<(typeof generalList)[number], SortKey>
           rows={generalList}
           keyField={(video) => video.youtube_video_id}
           emptyMessage="Brak filmów pasujących do wybranych filtrów."

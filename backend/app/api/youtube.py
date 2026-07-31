@@ -20,6 +20,7 @@ from app.services.youtube_client_factory import build_youtube_client
 from app.services.youtube_data_quality import audit_youtube_data_quality
 from app.services.youtube_intelligence_adapter import compute_all_video_metadata, get_video_history_buckets
 from app.services.youtube_sync import SyncAlreadyRunningError, sync_youtube
+from app.services.youtube_unified_bridge import bridge_all_youtube_videos
 
 router = APIRouter(prefix="/api/integrations/youtube", tags=["YouTube"])
 
@@ -130,6 +131,7 @@ def sync(db: Session = Depends(get_db)):
         channel, imported = sync_youtube(db, account, client)
     except SyncAlreadyRunningError as exc:
         raise HTTPException(409, str(exc)) from exc
+    bridge_all_youtube_videos(db, account, channel)
     return SyncResult(imported_videos=imported, channel_title=channel.title, synced_at=channel.synced_at or datetime.now(timezone.utc))
 
 

@@ -16,7 +16,8 @@ import type {
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 const QUICK_FILTERS: { key: CommentQuickFilter; label: string }[] = [
-  { key: "all", label: "Wszystkie" },
+  { key: "all", label: "Wątki widzów" },
+  { key: "mine", label: "Moje komentarze" },
   { key: "waiting", label: "🟡 Czekają" },
   { key: "new", label: "🔵 Nowe" },
   { key: "resolved", label: "🟢 Rozwiązane" },
@@ -248,10 +249,16 @@ export function CommunityInbox({ videos, initialQuickReplies }: { videos: Youtub
                   onClick={() => setQuick(option.key)}
                 >
                   {option.label}
+                  {option.key === "mine" && inbox ? ` (${inbox.summary.own_threads_count})` : ""}
                 </button>
               ))}
             </div>
           </div>
+          <p className="filterBarActive">
+            {quick === "mine"
+              ? "Komentarze opublikowane przez Twoje konto jako początek wątku, w tym komentarze przypięte."
+              : "Wątki rozpoczęte przez widzów. Twoje odpowiedzi pozostają widoczne we właściwych rozmowach."}
+          </p>
           <QuickReplyManager templates={quickReplies} onChange={setQuickReplies} />
         </div>
 
@@ -261,8 +268,12 @@ export function CommunityInbox({ videos, initialQuickReplies }: { videos: Youtub
           </div>
         ) : !inbox || inbox.threads.length === 0 ? (
           <div className="emptyState">
-            <h3>Brak komentarzy</h3>
-            <p>Żaden komentarz nie pasuje do wybranych filtrów, albo synchronizacja komentarzy nie została jeszcze uruchomiona.</p>
+            <h3>{quick === "mine" ? "Brak własnych komentarzy" : "Brak wątków widzów"}</h3>
+            <p>
+              {quick === "mine"
+                ? "Nie znaleziono komentarzy opublikowanych przez Twoje konto jako początek wątku."
+                : "Żaden wątek widza nie pasuje do wybranych filtrów albo synchronizacja komentarzy nie została jeszcze uruchomiona."}
+            </p>
           </div>
         ) : (
           <div className="commentList">

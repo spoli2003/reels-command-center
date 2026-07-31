@@ -1,14 +1,16 @@
-# Reels Command Center — Sprint 3
+# Reels Command Center — local development
 
-Sprint 3 dodaje produkcyjny fundament lokalny:
+RCC is a local multi-platform content analytics workspace for YouTube,
+Facebook and Instagram. The current release includes historical metrics,
+Creator Intelligence, Community Inbox, Meta Page selection and complete
+Instagram Business/Creator synchronization.
 
-- PostgreSQL 16,
-- Redis 7,
-- migracje Alembic uruchamiane automatycznie,
-- rejestrację, logowanie, wylogowanie i endpoint `/api/auth/me`,
-- hasła hashowane Argon2,
-- sesję JWT w ciasteczku HttpOnly,
-- zachowaną integrację YouTube ze Sprintu 2.
+## Local stack
+
+- FastAPI + SQLAlchemy + PostgreSQL 16
+- Next.js + TypeScript
+- Redis 7
+- Docker Compose
 
 ## Start
 
@@ -17,16 +19,27 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Panel: http://127.0.0.1:3000  
-API: http://127.0.0.1:8000  
-Swagger: http://127.0.0.1:8000/docs
+Use `localhost` consistently for the Meta flow:
 
-## Testy
+- Panel: http://localhost:3000
+- API: http://localhost:8000
+- Swagger: http://localhost:8000/docs
+
+Do not mix `localhost` and `127.0.0.1` in Meta URLs: the OAuth session cookie
+is host-scoped. See [Meta setup](./docs/META_SETUP.md) for the complete local
+Configuration and reconnect procedure.
+
+## Verification
 
 ```bash
-docker compose run --rm backend pytest
+docker compose exec -T backend pytest -q
+docker compose build frontend
+docker compose run --rm frontend npm run build
 ```
 
-## Unified Data Engine
+## Data model
 
-The current version adds canonical content videos, platform publications and immutable metric snapshots. API endpoints are available under `/api/content` and documented in Swagger at `http://127.0.0.1:8000/docs`.
+Facebook and Instagram write directly into the shared
+`ContentVideo`/`Publication`/`MetricSnapshot` and Community tables. YouTube's
+mature dedicated pipeline remains intact and mirrors into this shared layer.
+Architecture and product decisions are documented under [`docs/`](./docs/).

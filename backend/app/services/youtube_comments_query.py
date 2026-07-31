@@ -104,6 +104,7 @@ def build_inbox_rows(db: Session, channel_id: int, channel_youtube_id: Optional[
                 "replies": thread_replies,
                 "video": videos_by_id.get(thread.video_id),
                 "conversation_state": state,
+                "is_own_thread": top_level_is_own,
                 "is_likely_question": likely_question,
                 "priority_score": priority,
                 "last_message_at": last_message_at,
@@ -126,7 +127,14 @@ def filter_and_sort_rows(
     now: Optional[datetime] = None,
 ) -> list[dict]:
     now = now or datetime.now(timezone.utc)
-    filtered = rows
+    # The default inbox is an audience inbox: creator-authored top-level
+    # comments (including pinned promotional comments) are kept in the
+    # database, but live in the dedicated `mine` view. Replies written by the
+    # creator inside a viewer-started thread remain part of that viewer thread.
+    if quick == "mine":
+        filtered = [r for r in rows if r["is_own_thread"]]
+    else:
+        filtered = [r for r in rows if not r["is_own_thread"]]
 
     if video_id is not None:
         filtered = [r for r in filtered if r["video"] is not None and r["video"].id == video_id]
@@ -185,15 +193,17 @@ def filter_and_sort_rows(
 def build_inbox_summary(rows: list[dict], now: Optional[datetime] = None) -> dict:
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(days=RECENT_DAYS)
+    audience_rows = [r for r in rows if not r["is_own_thread"]]
     return {
-        "total_visible": len(rows),
-        "new_count": sum(1 for r in rows if r["conversation_state"] == ConversationState.NEW),
-        "waiting_count": sum(1 for r in rows if r["conversation_state"] == ConversationState.WAITING),
-        "resolved_count": sum(1 for r in rows if r["conversation_state"] == ConversationState.RESOLVED),
-        "closed_count": sum(1 for r in rows if r["conversation_state"] == ConversationState.CLOSED),
+        "total_visible": len(audience_rows),
+        "own_threads_count": sum(1 for r in rows if r["is_own_thread"]),
+        "new_count": sum(1 for r in audience_rows if r["conversation_state"] == ConversationState.NEW),
+        "waiting_count": sum(1 for r in audience_rows if r["conversation_state"] == ConversationState.WAITING),
+        "resolved_count": sum(1 for r in audience_rows if r["conversation_state"] == ConversationState.RESOLVED),
+        "closed_count": sum(1 for r in audience_rows if r["conversation_state"] == ConversationState.CLOSED),
         # "awaiting reply" = anything not resolved/closed — the actionable count.
-        "awaiting_reply_count": sum(1 for r in rows if r["conversation_state"] in (ConversationState.NEW, ConversationState.WAITING)),
-        "questions_count": sum(1 for r in rows if r["is_likely_question"]),
-        "recent_count": sum(1 for r in rows if _aware(r["thread"].published_at) >= cutoff),
-        "with_replies_count": sum(1 for r in rows if r["thread"].total_reply_count > 0),
+        "awaiting_reply_count": sum(1 for r in audience_rows if r["conversation_state"] in (ConversationState.NEW, ConversationState.WAITING)),
+        "questions_count": sum(1 for r in audience_rows if r["is_likely_question"]),
+        "recent_count": sum(1 for r in audience_rows if _aware(r["thread"].published_at) >= cutoff),
+        "with_replies_count": sum(1 for r in audience_rows if r["thread"].total_reply_count > 0),
     }

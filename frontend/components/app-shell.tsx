@@ -1,13 +1,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-const NAV_ITEMS: { href: string; label: string; disabled?: boolean }[] = [
+const NAV_ITEMS: { href: string; label: string; disabled?: boolean; activePrefix?: string }[] = [
   { href: "/", label: "Dashboard" },
   { href: "/videos", label: "Filmy" },
   { href: "/youtube", label: "Analytics" },
   { href: "#", label: "AI", disabled: true },
   { href: "#", label: "Business", disabled: true },
-  { href: "#", label: "Integracje", disabled: true },
+  { href: "/platforms/all", label: "Platformy", activePrefix: "/platforms" },
+  { href: "/synchronization", label: "Synchronizacja" },
+  { href: "/faq/punktacja", label: "FAQ punktacji", activePrefix: "/faq" },
 ];
 
 export function AppShell({ active, children }: { active: string; children: ReactNode }) {
@@ -25,7 +27,11 @@ export function AppShell({ active, children }: { active: string; children: React
                 {item.label}
               </a>
             ) : (
-              <Link key={item.label} href={item.href} className={item.href === active ? "active" : undefined}>
+              <Link
+                key={item.label}
+                href={item.href}
+                className={item.href === active || (item.activePrefix && active.startsWith(item.activePrefix)) ? "active" : undefined}
+              >
                 {item.label}
               </Link>
             ),

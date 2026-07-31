@@ -1,10 +1,12 @@
 import Link from "next/link";
 
 import { ConfidenceBadge } from "./confidence-badge";
+import { PlatformBadge } from "./platform-badge";
+import type { PlatformKey } from "../lib/platform-api";
 import { truncateTitle } from "../lib/youtube-metrics";
 import type { RecommendationData } from "../lib/youtube-api";
 
-export function RecommendationCard({ recommendation }: { recommendation: RecommendationData }) {
+export function RecommendationCard({ recommendation, platform = "youtube" }: { recommendation: RecommendationData; platform?: PlatformKey }) {
   return (
     <article className="recommendationCard">
       <div className="recommendationHeader">
@@ -21,8 +23,17 @@ export function RecommendationCard({ recommendation }: { recommendation: Recomme
               className="recommendationVideoChip"
               title={video.title}
             >
-              {video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <div className="recommendationVideoChipPlaceholder" />}
-              <span>{truncateTitle(video.title, 40)}</span>
+              <span className="recommendationVideoThumb">
+                {video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="recommendationVideoChipPlaceholder" />}
+                <span className={`recommendationPlatformMark ${platform}`} aria-hidden="true">
+                  {platform === "youtube" ? "▶" : platform === "facebook" ? "f" : "◎"}
+                </span>
+              </span>
+              <span className="recommendationVideoCopy">
+                <PlatformBadge platform={platform} />
+                <strong>{truncateTitle(video.title, 64)}</strong>
+                <small>Otwórz materiał →</small>
+              </span>
             </Link>
           ))}
         </div>
@@ -49,7 +60,7 @@ export function RecommendationList({
   return (
     <div className="recommendationList">
       {recommendations.map((recommendation) => (
-        <RecommendationCard key={recommendation.id} recommendation={recommendation} />
+        <RecommendationCard key={recommendation.id} recommendation={recommendation} platform="youtube" />
       ))}
     </div>
   );

@@ -18,6 +18,10 @@ class PlatformAccount(Base):
     refresh_token_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     scopes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Latest account-level audience size (YouTube keeps the same value on
+    # YoutubeChannel). Nullable means the platform did not expose the metric;
+    # it must never be presented as a real zero in the unified dashboard.
+    audience_count: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

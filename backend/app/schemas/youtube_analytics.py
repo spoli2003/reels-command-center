@@ -40,6 +40,7 @@ class VideoRowRead(BaseModel):
     views: int
     likes: int
     comments: int
+    followers_gained: Optional[int] = None
     engagement_rate: float
 
 

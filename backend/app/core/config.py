@@ -22,6 +22,25 @@ class Settings(BaseSettings):
     # docs/DECISIONS.md ADR-009; must be explicitly opted into via env var.
     youtube_sync_enabled: bool = False
     youtube_sync_interval_hours: float = 6.0
+    # Meta (Facebook + Instagram) OAuth — Release 0.8.0 / ADR-021. The user must
+    # create a Meta Developer App and provide these; RCC cannot create one on
+    # their behalf (same bootstrap step YouTube required with
+    # google_client_secret.json).
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_redirect_uri: str = "http://localhost:8000/api/platforms/meta/callback"
+    meta_graph_api_version: str = "v19.0"
+    # Facebook Login for Business Configuration ID (optional). Some app types no
+    # longer expose the classic scope-based Login product at all — only
+    # Configurations, each pre-defining its own permission set. When set, the
+    # authorize URL sends config_id instead of scope (Meta ignores/rejects a
+    # redundant scope alongside config_id); when empty, the classic scope-based
+    # flow (SCOPES in app/integrations/meta/oauth.py) is used unchanged.
+    meta_login_config_id: str = ""
+    # Automatic Facebook/Instagram sync. Mirrors the opt-in YouTube scheduler:
+    # one in-process task, disabled unless the operator explicitly enables it.
+    meta_sync_enabled: bool = False
+    meta_sync_interval_hours: float = 6.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

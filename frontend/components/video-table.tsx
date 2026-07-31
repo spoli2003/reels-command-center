@@ -1,16 +1,20 @@
 import type { ReactNode } from "react";
 
-import type { SortKey, TableSort } from "../lib/youtube-metrics";
+import type { SortKey } from "../lib/youtube-metrics";
 
-export type VideoTableColumn<T> = {
+// K defaults to the YouTube SortKey so every existing call site (which never
+// passes K explicitly) keeps its exact prior type — the generic /platforms/*
+// pages instantiate VideoTable<Row, PlatformSortKey> instead (see
+// components/platform-video-table-section.tsx).
+export type VideoTableColumn<T, K = SortKey> = {
   label: string;
   align?: "left" | "right";
   render: (row: T) => ReactNode;
   /** When set, the header becomes clickable and cycles the 3-state sort for this key. */
-  sortKey?: SortKey;
+  sortKey?: K;
 };
 
-export function VideoTable<T>({
+export function VideoTable<T, K = SortKey>({
   rows,
   columns,
   keyField,
@@ -20,12 +24,12 @@ export function VideoTable<T>({
   onSortChange,
 }: {
   rows: T[];
-  columns: VideoTableColumn<T>[];
+  columns: VideoTableColumn<T, K>[];
   keyField: (row: T) => string;
   emptyTitle?: string;
   emptyMessage?: string;
-  sort?: TableSort;
-  onSortChange?: (key: SortKey) => void;
+  sort?: { key: K; direction: "asc" | "desc" } | null;
+  onSortChange?: (key: K) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -45,13 +49,16 @@ export function VideoTable<T>({
               const isActive = isSortable && sort?.key === column.sortKey;
               const indicator = isActive ? (sort?.direction === "asc" ? "▲" : "▼") : "";
               return (
-                <th key={column.label} style={{ textAlign: column.align ?? "left" }}>
+                <th
+                  key={column.label}
+                  style={{ textAlign: column.align ?? "left" }}
+                  aria-sort={isSortable ? (isActive ? (sort?.direction === "asc" ? "ascending" : "descending") : "none") : undefined}
+                >
                   {isSortable ? (
                     <button
                       type="button"
                       className={`sortableHeader${isActive ? " active" : ""}`}
                       onClick={() => onSortChange!(column.sortKey!)}
-                      aria-sort={isActive ? (sort?.direction === "asc" ? "ascending" : "descending") : "none"}
                     >
                       {column.label} <span className="sortIndicator">{indicator || "↕"}</span>
                     </button>

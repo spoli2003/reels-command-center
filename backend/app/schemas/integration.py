@@ -43,6 +43,9 @@ class YoutubeVideoRead(BaseModel):
     views: int = 0
     likes: int = 0
     comments: int = 0
+    # YouTube Data API v3 does not attribute subscriber gain to an individual
+    # video. Kept nullable for a future YouTube Analytics API integration.
+    followers_gained: Optional[int] = None
     # Deterministic structured metadata (Sprint 5 / Part 8) — same fields on the
     # detail endpoint, computed by the same function, so they never disagree.
     views_per_day: float = 0.0

@@ -3,6 +3,154 @@
 Entries are grouped by sprint, newest first. This changelog describes product/
 engineering outcomes, not individual commits.
 
+## Community Inbox — own-thread separation
+
+Creator-authored top-level comments, including pinned promotional comments,
+remain synchronized but no longer appear in the default audience inbox or its
+actionable KPI totals. A dedicated **Moje komentarze** tab exposes those
+threads explicitly, while creator replies inside viewer-started conversations
+remain visible in their original thread. YouTube, Facebook and Instagram use
+the same rule and response contract; cards now receive explicit authorship
+metadata instead of inferring it from conversation state.
+
+## Release 0.8.3 — Instagram Complete
+
+Instagram now has a complete connection and synchronization path rather than a
+thin placeholder on top of the Meta foundation. The OAuth layer defines the
+exact permission groups used for discovery, content/insights, comment reading
+and comment actions, and reports every missing permission in one actionable
+message. Page discovery requests the linked `instagram_business_account`
+inline, including account type and profile metadata, and supports both Business
+and Creator professional accounts. A compatibility lookup remains for Graph
+responses that omit the nested field.
+
+Selecting an Instagram account writes its `PlatformAccount` and immediately
+runs the first content + comment synchronization. Initial, manual and scheduled
+sync all call the same `sync_meta_account()` orchestration service. The new
+Meta scheduler is deliberately opt-in (`META_SYNC_ENABLED=false` by default),
+isolates Facebook and Instagram failures, validates the live token/scopes, and
+reports its next planned run through the platform status endpoint.
+
+The Graph client now cursor-paginates Instagram media, comments and replies
+without following Meta's token-bearing `next` URLs. Insights are fetched per
+metric so one unsupported metric cannot discard valid `views`, `reach`,
+`saved` or `shares`; reach is never relabelled as views. The shared Instagram
+dashboard exposes real availability, synchronization and permission states,
+honest empty/error states, and Community data through the existing unified
+content/comment layer.
+
+Security hardening in the same pass removes raw Page/profile payloads from
+diagnostic logs and disables Uvicorn's raw access log because OAuth callback
+URLs contain one-time `code` and `state` values. Compact credential-free Meta
+diagnostics remain available.
+
+**Verification:** 176/176 backend tests pass. The production frontend build
+compiles and type-checks successfully across all routes. The real Facebook
+connection remains intact. Real Instagram verification is pending the manual
+Meta Configuration grant/reconnect documented in `KNOWN_ISSUES.md`.
+
+## Release 0.8.1 — Meta Page Selection (patch)
+
+A pre-launch audit of the Meta integration, done before any real Meta account
+was ever connected, found that `meta_callback()` (Release 0.8.0) silently
+connected whichever Facebook Page `GET /me/accounts` returned first — unsafe
+for anyone managing more than one Page. Fixed with a proper Page Selection
+flow (ADR-023): OAuth consent no longer writes a `PlatformAccount` directly.
+Instead, every Page the Meta account manages is fetched (with its linked
+Instagram account eagerly resolved), held server-side for 10 minutes keyed by
+an opaque selection ID, and the browser is redirected to a new screen —
+`/platforms/meta/select-page` — that lists every Page (picture, name,
+category, follower count, linked Instagram username if any) and requires an
+explicit click. Only that click writes the `PlatformAccount`. Picking a Page
+with no linked Instagram while connecting Instagram shows a clear error and
+leaves the picker usable, instead of forcing a full OAuth restart.
+
+Two real bugs were also found and fixed during the same pre-launch audit,
+before real credentials were entered anywhere: the default `META_REDIRECT_URI`
+used `127.0.0.1` (Meta's local-redirect HTTPS exemption generally only covers
+the literal `localhost` hostname), and `GraphClient` hardcoded its Graph API
+version independently of `META_GRAPH_API_VERSION`, so changing that setting
+silently had no effect on any actual data/comment call. Both fixed — see
+ADR-022. Facebook Login for Business support (`META_LOGIN_CONFIG_ID`) was also
+added in the same pass, for Meta app types whose dashboard only exposes
+Configurations rather than the classic scope-based Login screen.
+
+**Verification:** 13 new backend tests (39 total for the Meta integration
+specifically) — full callback→selection→connect round trips through a real
+`TestClient` session (state/CSRF check exercised for real, not mocked), the
+"never auto-connect" guarantee, single-use selection enforcement, the
+recoverable-error path for a Page without linked Instagram, and the in-memory
+selection store's TTL/pruning. 153 backend tests pass in total. Frontend
+production build is clean (all 15 routes, including the new
+`/platforms/meta/select-page` screen).
+
+**Known follow-ups (not blockers, tracked honestly — see
+[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)):** not yet verified against a real Meta
+account with multiple Pages (or the `META_LOGIN_CONFIG_ID` path) — this was
+built and tested before any real Meta credentials were exercised end-to-end.
+
+## Release 0.8.0 — Facebook & Instagram (Meta Platform Integration)
+
+RCC's first real second/third-platform integration, and the moment the unified
+content engine (`ContentVideo`/`Publication`/`MetricSnapshot`, built in Sprint 1
+and deliberately left unused — see ADR-003) finally gets populated, per ADR-020.
+Facebook Pages and Instagram professional accounts connect through one Meta
+OAuth app (ADR-021) and sync directly into the unified engine via a small
+`PlatformAdapter` protocol — one generic sync/comment/actions/query service
+trio, not per-platform copies. Comments reuse the exact Community Engine shape
+YouTube already has (conversation state, priority scoring, quick replies) over
+new generic `ContentCommentThread`/`ContentComment` tables, and Creator
+Intelligence (daily brief, winning/attention videos, topics, publishing
+patterns) reuses `services/intelligence/engine.py` completely unchanged — the
+platform-agnostic design ADR-007 was built for.
+
+YouTube's own dedicated pipeline is untouched — mature, tested, live-verified,
+and not worth the regression risk of rewriting onto the unified engine this
+release. Instead it gets one small additive step: after every sync,
+`youtube_unified_bridge.py` dual-writes the same data into the unified tables,
+so YouTube also shows up on the new generic `/platforms/*` surfaces without
+changing a single existing YouTube endpoint, schema, or test.
+
+A new generic API namespace (`/api/platforms/{platform}/...`) and matching
+frontend surface (`/platforms/{platform}[/videos|/compare|/intelligence|
+/community]`) serve YouTube (bridged), Facebook, and Instagram identically —
+reusing `VideoTable`, `RankedVideoList`, and the Community Inbox components
+YouTube's dedicated pages already had, rather than rebuilding them. The
+sidebar's previously-disabled "Integracje" nav item and Home's static
+"Facebook/Instagram: Wkrótce" placeholder cards now point at this real surface,
+showing live connect status per platform.
+
+**Verification:** 62 new backend tests (fake `PlatformAdapter`/`GraphClient`
+doubles, no live Meta API calls — mirrors the existing YouTube fake-client
+pattern) covering content sync idempotency/dedup/fault-isolation, comment
+sync/query/actions authorization, the Facebook/Instagram adapters' raw-Graph-API
+field mapping, the YouTube bridge's dual-write and failure-swallowing, the
+classic vs. Facebook-Login-for-Business (`META_LOGIN_CONFIG_ID`, ADR-022)
+authorize-URL branching, and the `/api/platforms/*` endpoints — 140 backend
+tests pass in total. Frontend production build is clean (all 14 routes,
+including the 6 new `/platforms/*`
+routes, type-checked and prerendered). Verified end-to-end against the real
+connected YouTube channel via `docker compose up`: the bridge correctly mirrors
+35 live videos onto `/platforms/youtube`, and Dashboard/Videos/Compare/
+Intelligence/Community all render real data through the generic surface.
+
+**Known follow-ups (not blockers, tracked honestly — see
+[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)):**
+- Facebook/Instagram connect and sync could not be verified against a real Meta
+  Developer App and real Page/Instagram account in this session (no credentials
+  available) — verified via unit tests against fake Graph API responses only,
+  same caveat as any first integration built without live credentials.
+- First-Page-only OAuth: a Meta user managing several Facebook Pages has RCC
+  connect whichever Page `GET /me/accounts` returns first, not a picker.
+- No automatic sync scheduler for Facebook/Instagram (YouTube's own scheduler,
+  ADR-009, is not extended to Meta platforms this release) — sync is
+  manual-trigger only via "Synchronizuj teraz", same starting point YouTube had
+  before Sprint 6.
+- Facebook/Instagram start at the generic surface's baseline depth (no
+  channel-wide history chart, no data-quality audit, no quota-aware
+  incremental sync) — closing that gap to YouTube's full Sprint 5/6/0.7.x depth
+  is future work, not a regression, since these platforms never had it before.
+
 ## Release 0.7.1 — Community UX & Conversation Engine (patch)
 
 Fixed a real correctness bug in 0.7.0: "answered" was computed as "any reply

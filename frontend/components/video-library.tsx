@@ -23,6 +23,7 @@ import {
   truncateTitle,
   withDerivedMetrics,
   type DateRangeKey,
+  type DerivedVideo,
   type QuickFilter,
   type SortDirection,
   type SortKey,
@@ -42,7 +43,7 @@ export function VideoLibrary({ initialVideos }: { initialVideos: YoutubeChannelV
   const search = searchParams.get("q") ?? "";
   const sortKey: SortKey = isSortKey(searchParams.get("sort")) ? (searchParams.get("sort") as SortKey) : "published_at";
   const sortDirection: SortDirection = isSortDirection(searchParams.get("dir")) ? (searchParams.get("dir") as SortDirection) : "desc";
-  const sort: TableSort = { key: sortKey, direction: sortDirection };
+  const sort: TableSort = useMemo(() => ({ key: sortKey, direction: sortDirection }), [sortKey, sortDirection]);
   const minViews = searchParams.get("minViews") ? Number(searchParams.get("minViews")) : null;
   const maxViews = searchParams.get("maxViews") ? Number(searchParams.get("maxViews")) : null;
   const quickFilter: QuickFilter = isQuickFilter(searchParams.get("quick")) ? (searchParams.get("quick") as QuickFilter) : "all";
@@ -145,7 +146,7 @@ export function VideoLibrary({ initialVideos }: { initialVideos: YoutubeChannelV
           activeLabel={activeLabel}
         />
 
-        <VideoTable
+        <VideoTable<DerivedVideo, SortKey>
           rows={sorted}
           keyField={(video) => video.youtube_video_id}
           emptyMessage="Brak filmów pasujących do wybranych filtrów."

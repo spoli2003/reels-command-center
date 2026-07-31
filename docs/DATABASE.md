@@ -90,14 +90,23 @@ engine below. Not linked to any other entity, not used by any current page. Left
 place rather than removed mid-project; a candidate for deletion once confirmed
 unneeded.
 
-### ContentVideo / Publication / MetricSnapshot *(unified engine, currently unused)*
+### ContentVideo / Publication / MetricSnapshot *(unified engine, live since Release 0.8.0)*
 Designed in Sprint 1 as a cross-platform aggregation layer: one canonical
 `ContentVideo` can have many `Publication` rows (one per platform upload), each with
-its own `MetricSnapshot` history. **The YouTube sync path never writes to this model**
-— it remains a real, working API surface (`/api/content/*`) with zero rows in
-practice. This is the intended home for genuine cross-platform aggregation once a
-second platform integration exists; see [ROADMAP.md](./ROADMAP.md) and
-[TODO.md](./TODO.md).
+its own `MetricSnapshot` history. Populated for real as of Release 0.8.0 (ADR-020):
+Facebook and Instagram sync directly into it via `content_sync.py`, and YouTube's
+own dedicated pipeline (still the source of truth for its own tables) additively
+dual-writes into it via `youtube_unified_bridge.py` after every sync, so all three
+platforms are visible through the generic `/api/platforms/*` API and `/platforms/*`
+frontend surface.
+
+### ContentCommentThread / ContentComment *(unified engine, live since Release 0.8.0)*
+The generic equivalent of `YoutubeCommentThread`/`YoutubeComment` (ADR-020),
+FK'd to `Publication` instead of `YoutubeVideo` so Facebook and Instagram
+comments share one storage/query/sync/action implementation with each other,
+reusing `comment_intelligence.py` (conversation state, priority scoring)
+unchanged. YouTube's own comment tables remain the source of truth for its own
+Community Inbox; `youtube_unified_bridge.py` additively mirrors them here too.
 
 ## Relationships (current, YouTube path)
 
@@ -108,6 +117,18 @@ PlatformAccount (1) ──── (1) YoutubeChannel ──┬── (many) Youtu
 PlatformAccount (1) ──── (many) QuickReplyTemplate
 SyncRun — not foreign-keyed to any of the above; correlated by platform + timestamp only.
 ```
+
+## Relationships (current, unified engine path — Facebook/Instagram + bridged YouTube)
+
+```
+PlatformAccount (1) ──── (many) Publication ──── (1) ContentVideo
+                                    │
+                                    ├── (many) MetricSnapshot
+                                    └── (many) ContentCommentThread ──── (many) ContentComment
+```
+No generic `Channel` entity exists yet (see "Channel (generic)" below) — a
+Facebook Page or Instagram professional account IS its `PlatformAccount` row
+directly, one level shallower than YouTube's `PlatformAccount` → `YoutubeChannel`.
 
 ## Future entities (planned, not yet modeled)
 
@@ -127,13 +148,16 @@ first-class channel entity; a generic one would let the unified `ContentVideo` m
 actually aggregate across platforms.
 
 ### Video (generic)
-`ContentVideo` already exists for this purpose (see above) — the future work here is
-population, not schema.
+~~`ContentVideo` already exists for this purpose (see above) — the future work here
+is population, not schema.~~ Done as of Release 0.8.0 — see above.
 
 ### Snapshot (generic)
-`MetricSnapshot` (unified engine) already exists in parallel to
+~~`MetricSnapshot` (unified engine) already exists in parallel to
 `YoutubeMetricSnapshot` — the future work is making the YouTube sync path write to
-both, or migrating fully to one.
+both, or migrating fully to one.~~ Done as of Release 0.8.0, via the additive
+`youtube_unified_bridge.py` dual-write — see above. `YoutubeMetricSnapshot`
+remains the source of truth for YouTube's own dedicated pipeline; nothing was
+migrated away from it.
 
 ### Analytics
 Currently computed on-demand (no materialized analytics tables). If computation cost

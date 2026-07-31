@@ -25,8 +25,8 @@ done — no matter how complete the underlying data model is.
 | Platform | Status | Notes |
 |---|---|---|
 | YouTube | Live | OAuth (Data API v3), full sync, analytics, Creator Intelligence, Community Inbox (comments) |
-| Facebook | Planned | No integration work started |
-| Instagram | Planned | No integration work started |
+| Facebook | Live | Meta OAuth, explicit Page selection, content/comment sync, analytics, Community Inbox |
+| Instagram | Code-complete; live grant pending | Business/Creator discovery, first/manual/scheduled sync, Reels/posts, insights, comments and shared dashboard; the live Meta Configuration still needs the Instagram permissions listed in `.env.example`/the UI |
 | TikTok | Planned | No integration work started |
 
 The intelligence engine (`backend/app/services/intelligence/`) is already
@@ -74,6 +74,10 @@ confidence-gated recommendations, structured per-video metadata. See
 | 6 | Historical analytics engine | Idempotent, quota-conscious, crash-tolerant sync (overlap guard, stale-run reclaim, per-video fault isolation), an in-process automatic scheduler, age-anchored history bucketing (day/week/month, never raw sync timestamps), channel-wide history, and a data-quality audit. |
 | 0.6.1 | Synchronization consistency (patch) | Fixed a real bug where different pages could show different "last synchronization" timestamps — `GET /status` is now the single source of truth everywhere, with a shared `<SyncStatusLine>` component and `router.refresh()` after sync. |
 | 0.7.0 | YouTube Community Inbox | RCC's first module that acts, not just analyzes: review, prioritize, and reply to YouTube comments without leaving RCC. Deterministic (no LLM) likely-question detection and priority scoring, quota-conscious comment sync, own-reply edit/delete with server-side authorization, quick-reply templates, and Home/Video-Detail integration. Requires a one-time OAuth reconnect (new `youtube.force-ssl` scope) for accounts connected before this release. |
+| 0.8.0–0.8.2 | Meta foundation and Facebook completion | Shared platform/content/comment layer, Meta OAuth through Facebook Login for Business, explicit Page selection, safe token diagnostics, real Facebook connection and synchronization. Live debugging fixed hostname-scoped OAuth state, secret-bearing exception logs, the missing `business_management` grant and an optional-Instagram lookup crash. |
+| 0.8.3 | Instagram Complete | Business and Creator account discovery through the linked Facebook Page; complete permission diagnostics; immediate first sync, manual sync and opt-in scheduler through one orchestration path; cursor-paginated Reels/posts/comments/replies; honest media insights; shared dashboard/Community states. Code and synthetic regression verification complete; live Meta permission grant/reconnect remains an operator step. |
+| 0.8.4a | Explainable cross-platform ranking | Rebuilt „Najlepsze materiały” with a platform badge, honest per-item audience-gain availability, an expandable audit of the existing 50/30/20 score, detail-page breakdowns and a dedicated scoring methodology FAQ. |
+| 0.8.4b | Unified Platform Experience | Unified the YouTube/Facebook/Instagram navigation and section layout, added the missing YouTube Materials surface, removed synchronization cards from dashboards, introduced a dedicated synchronization center with history/schedules/errors, an aggregate `Synchronizuj wszystko` action, and a shared platform-status strip. TikTok is represented only as an honest planned adapter. |
 
 ## Definition of Done
 

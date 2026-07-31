@@ -4,6 +4,76 @@ Grouped by timeframe, then by category. This is the working roadmap — see
 [ROADMAP.md](./ROADMAP.md) for the philosophy behind it and
 [CHANGELOG.md](./CHANGELOG.md) for what has already shipped.
 
+## Release 0.8.4 — Explainable ranking (done)
+
+- [x] Platform icon and name on every row in „Najlepsze materiały”.
+- [x] Nullable per-content follower/subscriber gain carried through the generic API, with an explicit „brak danych” fallback.
+- [x] Expandable score audit: normalized inputs, weights, points added and points not earned.
+- [x] Dedicated „Jak działa punktacja?” page with formula, normalization, limitations and example.
+- [x] The same explanation on individual content detail pages.
+- [x] Component and scoring regression tests.
+- [ ] Integrate YouTube Analytics API before showing per-video subscriber gain; Data API v3 does not provide that attribution.
+- [ ] Populate Meta per-content follower gain only if the live Graph API returns a documented direct attribution. Never infer it from account-level changes.
+
+## Release 0.8.3 — Instagram Complete (code complete; live verification pending)
+
+- [x] Exact Instagram permission groups and actionable missing-scope diagnostics.
+- [x] Linked Business/Creator discovery through the selected Facebook Page.
+- [x] `PlatformAccount` creation plus automatic first synchronization.
+- [x] One orchestration path for initial, manual and scheduled Meta sync.
+- [x] Cursor-paginated media, comments and replies; resilient per-metric insights.
+- [x] Shared content/comment storage and Instagram dashboard/Community states.
+- [x] 176 backend tests and clean production frontend build.
+- [ ] In Meta's active Login Configuration, grant `instagram_basic`,
+      `instagram_manage_comments` and `read_insights`, remove the
+      old RCC Business Integration grant, and reconnect.
+- [ ] Verify the first and manual sync against the real Instagram account, then
+      optionally enable `META_SYNC_ENABLED=true` and observe one scheduled run.
+
+## Release 0.8.1 — Meta Page Selection (done)
+
+Shipped in full — see [CHANGELOG.md](./CHANGELOG.md). A pre-launch audit found
+0.8.0's `meta_callback()` silently connected the first Facebook Page returned
+by the Meta account, with no way to choose — fixed with a proper Page
+Selection screen (ADR-023): OAuth consent fetches every Page (with linked
+Instagram resolved), holds them server-side, and requires an explicit pick
+before any `PlatformAccount` is written. Also fixed two real bugs found during
+credential setup (redirect URI HTTPS-exemption hostname, hardcoded Graph API
+version — ADR-022) and added optional Facebook Login for Business
+(`META_LOGIN_CONFIG_ID`) support for Meta app types that only expose
+Configurations. 153 backend tests pass (75 for the Meta integration
+specifically), frontend build clean across 15 routes.
+
+**Known follow-ups (not blockers — see [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)):**
+- [ ] Not yet verified against a real Meta account with multiple Pages, or
+      against a real Facebook Login for Business Configuration — built and
+      tested against fake Graph API responses only.
+- [ ] Pending Page Selection state is in-memory/single-process (deliberate,
+      see ADR-023) — revisit if RCC ever runs multiple backend workers.
+
+## Release 0.8.0 — Facebook & Instagram (Meta Platform Integration) (done)
+
+Shipped in full — see [CHANGELOG.md](./CHANGELOG.md). Facebook and Instagram
+sync into the unified `ContentVideo`/`Publication`/`MetricSnapshot` engine
+(finally populated per ADR-003/ADR-020) via one generic `PlatformAdapter`
+protocol, sharing the Community Engine (comments, conversation state, quick
+replies) and Creator Intelligence engine with YouTube. YouTube's own dedicated
+pipeline is untouched; a new dual-write bridge makes its data visible on the
+new generic `/platforms/*` surfaces too. 140 backend tests pass (62 new),
+frontend build clean across all 14 routes, verified end-to-end against the
+real connected YouTube channel.
+
+**Known follow-ups (not blockers, tracked honestly — see
+[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)):**
+- [x] Facebook is connected and synchronized against the real Meta Page.
+- [x] Explicit Page picker replaces the unsafe first-Page behavior (0.8.1).
+- [x] Opt-in Facebook/Instagram scheduler reusing the manual path (0.8.3).
+- [ ] Complete the real Instagram permission grant/reconnect and verify its
+      first sync (tracked under 0.8.3 above).
+- [ ] Facebook/Instagram sit at the generic surface's baseline depth (no
+      channel-history chart, no data-quality audit, no quota-aware incremental
+      sync) — closing that gap to YouTube's full depth is future work.
+
 ## Release 0.7.1 — Community UX & Conversation Engine (done)
 
 Shipped in full — see [CHANGELOG.md](./CHANGELOG.md). Fixed the conversation-state
@@ -67,12 +137,8 @@ Sprint 6) is complete, tested, and verified against the real connected channel.
 ## Sprint 7 (proposed)
 
 **Integrations**
-- First real second-platform integration: Facebook. Reuse the `PlatformAccount`
-  pattern; write a `facebook_intelligence_adapter.py` following the YouTube adapter's
-  shape — no changes expected inside `services/intelligence/`. Sprint 6's sync
-  engine improvements (dedup, overlap guard, per-video fault isolation, scheduler)
-  are platform-agnostic at the `SyncRun`/`PlatformAccount` level, so Facebook's sync
-  path can follow the same pattern rather than reinventing it.
+- ~~First real second-platform integration: Facebook.~~ Shipped in Release
+  0.8.0, together with Instagram — see above.
 
 **AI**
 - First AI Engine narration pass (see [AI_ENGINE.md](./AI_ENGINE.md)): consume
@@ -82,10 +148,13 @@ Sprint 6) is complete, tested, and verified against the real connected channel.
 ## Sprint 8 (proposed)
 
 **Integrations**
-- Instagram and TikTok integrations, same adapter pattern as Facebook.
-- Once ≥2 platforms are live: finally populate the unified `ContentVideo`/
-  `Publication`/`MetricSnapshot` engine for real cross-platform rollups (it has sat
-  unused since Sprint 1 — see [DATABASE.md](./DATABASE.md)).
+- ~~Instagram integration, same adapter pattern as Facebook.~~ Shipped in
+  Release 0.8.0. TikTok remains a future `PlatformAdapter` implementation only
+  (ADR-020) — no new tables, sync service, or API router required.
+- ~~Once ≥2 platforms are live: finally populate the unified `ContentVideo`/
+  `Publication`/`MetricSnapshot` engine for real cross-platform rollups.~~
+  Shipped in Release 0.8.0 (ADR-020) — Facebook/Instagram sync directly into it,
+  and YouTube dual-writes into it via `youtube_unified_bridge.py`.
 
 ## Future
 

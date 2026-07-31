@@ -1,16 +1,20 @@
 import Link from "next/link";
 
 import { AppShell } from "../components/app-shell";
-import { ExternalLink, youtubeWatchUrl } from "../components/external-link";
+import { ExternalLink } from "../components/external-link";
+import { PlatformBadge } from "../components/platform-badge";
+import { PlatformStatusBar } from "../components/platform-status-bar";
 import { RankedVideoList } from "../components/ranked-video-list";
 import { RecommendationCard } from "../components/recommendation-card";
 import { StatCard, StatsGrid } from "../components/stat-card";
 import { SyncStatusLine } from "../components/sync-status-line";
-import { YoutubePanel } from "../components/youtube-panel";
+import { createPlatformApi, createPlatformOverviewApi, PLATFORM_LABELS, platformPath, type PlatformKey } from "../lib/platform-api";
+import { aggregateCommentInboxes, aggregatePlatformMetrics } from "../lib/dashboard-aggregation";
+import { withDerivedMetrics as withPlatformDerivedMetrics } from "../lib/platform-metrics";
 import { createYoutubeApi } from "../lib/youtube-api";
-import { withDerivedMetrics } from "../lib/youtube-metrics";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
+const META_PLATFORM_ICONS: Record<Extract<PlatformKey, "facebook" | "instagram">, string> = { facebook: "f", instagram: "◎" };
 
 function compact(value: number) {
   return new Intl.NumberFormat("pl-PL", { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -18,24 +22,51 @@ function compact(value: number) {
 
 export default async function Home() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const [summary, status, report, videos, commentInbox] = await Promise.all([
+  const platformOverviewApi = createPlatformOverviewApi(INTERNAL_API_URL);
+  const allPlatformsApi = createPlatformApi(INTERNAL_API_URL, "all");
+  const facebookApi = createPlatformApi(INTERNAL_API_URL, "facebook");
+  const instagramApi = createPlatformApi(INTERNAL_API_URL, "instagram");
+  const [summary, status, report, videos, youtubeComments, facebookComments, instagramComments, platformSummaries, allPlatformVideos] = await Promise.all([
     api.getSummary(),
     api.getStatus(),
     api.getIntelligence(),
     api.getVideos(),
     api.getComments({ sort: "newest" }),
+    facebookApi.getComments({ sort: "newest" }),
+    instagramApi.getComments({ sort: "newest" }),
+    platformOverviewApi.listPlatforms(),
+    allPlatformsApi.getVideos(),
   ]);
+  const metaPlatforms = platformSummaries.filter(
+    (item): item is typeof item & { platform: "facebook" | "instagram" } => item.platform === "facebook" || item.platform === "instagram",
+  );
+  const commentInbox = aggregateCommentInboxes(youtubeComments, facebookComments, instagramComments);
+  const platformMetrics = aggregatePlatformMetrics(allPlatformVideos, platformSummaries);
   const newestComment = commentInbox.threads[0] ?? null;
   const newQuestions = commentInbox.threads.filter(
     (thread) => thread.is_likely_question && (thread.conversation_state === "new" || thread.conversation_state === "waiting"),
   );
   const recentlyActive = [...commentInbox.threads].sort((a, b) => +new Date(b.last_message_at) - +new Date(a.last_message_at)).slice(0, 3);
-  const discussionCountByVideo = new Map<string, { title: string; count: number }>();
+  const discussionCountByVideo = new Map<string, { title: string; count: number; href: string }>();
   for (const thread of commentInbox.threads) {
-    const existing = discussionCountByVideo.get(thread.youtube_video_id);
-    discussionCountByVideo.set(thread.youtube_video_id, { title: thread.video_title, count: (existing?.count ?? 0) + 1 });
+    const key = `${thread.platform}:${thread.external_id}`;
+    const existing = discussionCountByVideo.get(key);
+    discussionCountByVideo.set(key, { title: thread.video_title, count: (existing?.count ?? 0) + 1, href: thread.href });
   }
   const mostDiscussedVideo = [...discussionCountByVideo.entries()].sort((a, b) => b[1].count - a[1].count)[0] ?? null;
+  const synchronizedPlatformCount = new Set(allPlatformVideos.map((video) => video.platform)).size;
+  const breakdown = (field: "materials" | "views" | "interactions" | "comments" | "audience") =>
+    (["youtube", "facebook", "instagram"] as PlatformKey[]).map((platform) => ({
+      label: PLATFORM_LABELS[platform],
+      value:
+        field === "views" && !platformMetrics.byPlatform[platform].viewsAvailable
+          ? "Brak dostępu"
+          : platformMetrics.byPlatform[platform][field] === null
+            ? "Brak danych"
+            : compact(platformMetrics.byPlatform[platform][field] as number),
+      href: platformPath(platform),
+      tone: platform,
+    }));
 
   return (
     <AppShell active="/">
@@ -59,51 +90,35 @@ export default async function Home() {
           </Link>
         ) : null}
       </header>
+      <PlatformStatusBar />
 
-      {!summary || videos.length === 0 ? (
+      {allPlatformVideos.length === 0 ? (
         <>
           <div className="emptyState">
             <h3>Zacznij od połączenia kanału</h3>
-            <p>Połącz konto YouTube poniżej, aby odblokować dashboard, porównania i rekomendacje oparte na Twoich danych.</p>
+            <p>Połącz konto w osobnej sekcji Synchronizacja, aby odblokować dashboard, porównania i rekomendacje.</p>
+            <Link className="primaryButton" href="/synchronization">Przejdź do synchronizacji →</Link>
           </div>
-          <YoutubePanel />
         </>
       ) : (
         <>
           <section className="libraryPanel">
             <div className="libraryHeading">
               <div>
-                <p className="eyebrow">DZIŚ</p>
-                <h2>Podsumowanie dnia</h2>
+                <p className="eyebrow">WSZYSTKIE PLATFORMY</p>
+                <h2>Wyniki wszystkich platform</h2>
               </div>
+              <Link className="textLink" href="/platforms/all">
+                Otwórz widok zbiorczy →
+              </Link>
             </div>
             <StatsGrid>
-              <StatCard
-                label="Wyświetlenia (24h)"
-                value={
-                  report?.daily_brief.views_gained_24h !== null && report?.daily_brief.views_gained_24h !== undefined
-                    ? `+${compact(report.daily_brief.views_gained_24h)}`
-                    : "Brak danych"
-                }
-                tooltip="Suma przyrostu wyświetleń wszystkich filmów między najnowszą synchronizacją a najbliższą sprzed 24h."
-                featured
-              />
-              <StatCard label="Subskrybenci" value={compact(summary.subscriber_count)} hint="cały kanał" />
-              <StatCard
-                label="Filmy wymagające uwagi"
-                value={String(report?.daily_brief.attention_video_count ?? 0)}
-                hint="zobacz sekcję Co dalej?"
-              />
-              <StatCard
-                label="Dni od ostatniej publikacji"
-                value={
-                  report?.daily_brief.days_since_last_upload !== null && report?.daily_brief.days_since_last_upload !== undefined
-                    ? String(report.daily_brief.days_since_last_upload)
-                    : "Brak danych"
-                }
-              />
+              <StatCard label="Wyświetlenia" value={compact(platformMetrics.total.views)} hint="suma platform z dostępną metryką" featured breakdown={breakdown("views")} />
+              <StatCard label="Społeczność" value={platformMetrics.total.audience === null ? "Brak danych" : compact(platformMetrics.total.audience)} hint="subskrybenci + obserwujący (nieunikalni)" breakdown={breakdown("audience")} />
+              <StatCard label="Komentarze" value={compact(platformMetrics.total.comments)} hint="pod wszystkimi materiałami" breakdown={breakdown("comments")} />
+              <StatCard label="Materiały" value={compact(platformMetrics.total.materials)} hint={`${synchronizedPlatformCount} platformy z danymi`} breakdown={breakdown("materials")} />
+              <StatCard label="Interakcje" value={compact(platformMetrics.total.interactions)} hint="polubienia, komentarze, udostępnienia i zapisy" breakdown={breakdown("interactions")} />
             </StatsGrid>
-            {report?.daily_brief.no_upload_warning ? <div className="alert">{report.daily_brief.no_upload_warning}</div> : null}
           </section>
 
           <section className="libraryPanel">
@@ -112,9 +127,11 @@ export default async function Home() {
                 <p className="eyebrow">SPOŁECZNOŚĆ</p>
                 <h2>Czy są komentarze wymagające uwagi?</h2>
               </div>
-              <Link className="textLink" href="/youtube/community">
-                Otwórz Skrzynkę komentarzy →
-              </Link>
+              <nav className="communityPlatformLinks" aria-label="Komentarze według platformy">
+                <Link href="/youtube/community">YouTube</Link>
+                <Link href="/platforms/facebook/community">Facebook</Link>
+                <Link href="/platforms/instagram/community">Instagram</Link>
+              </nav>
             </div>
             <StatsGrid>
               <StatCard
@@ -131,7 +148,7 @@ export default async function Home() {
             {mostDiscussedVideo ? (
               <p className="muted" style={{ marginTop: 14 }}>
                 Najwięcej komentarzy zebrał film{" "}
-                <Link href={`/youtube/videos/${mostDiscussedVideo[0]}`}>{mostDiscussedVideo[1].title}</Link> ({mostDiscussedVideo[1].count}{" "}
+                <Link href={mostDiscussedVideo[1].href}>{mostDiscussedVideo[1].title}</Link> ({mostDiscussedVideo[1].count}{" "}
                 {mostDiscussedVideo[1].count === 1 ? "wątek" : "wątków"}).
               </p>
             ) : null}
@@ -144,8 +161,8 @@ export default async function Home() {
                 <div className="dailyBriefLinks">
                   {recentlyActive.map((thread) => (
                     <p key={thread.platform_thread_id}>
-                      {thread.conversation_state === "waiting" ? "🟡" : thread.conversation_state === "new" ? "🔵" : "🟢"}{" "}
-                      <Link href={`/youtube/videos/${thread.youtube_video_id}`}>
+                      <span className={`commentPlatformBadge ${thread.platform}`}>{META_PLATFORM_ICONS[thread.platform as "facebook" | "instagram"] ?? "▶"}</span>{" "}
+                      <Link href={thread.href}>
                         {thread.text_original.length > 70 ? `${thread.text_original.slice(0, 69)}…` : thread.text_original}
                       </Link>{" "}
                       — {thread.author_display_name}
@@ -171,7 +188,7 @@ export default async function Home() {
                 </div>
               </div>
               {report && report.winning_videos.length > 0 ? (
-                <RecommendationCard recommendation={report.winning_videos[0]} />
+                <RecommendationCard recommendation={report.winning_videos[0]} platform="youtube" />
               ) : (
                 <div className="emptyState">
                   <h3>Brak danych</h3>
@@ -187,7 +204,7 @@ export default async function Home() {
                 </div>
               </div>
               {report && (report.follow_up_opportunities[0] || report.content_recommendations[0]) ? (
-                <RecommendationCard recommendation={report.follow_up_opportunities[0] ?? report.content_recommendations[0]} />
+                <RecommendationCard recommendation={report.follow_up_opportunities[0] ?? report.content_recommendations[0]} platform="youtube" />
               ) : (
                 <div className="emptyState">
                   <h3>Brak danych</h3>
@@ -200,8 +217,7 @@ export default async function Home() {
             </div>
           </section>
 
-          <section className="homeSplitGrid">
-            <div className="libraryPanel">
+          <section className="libraryPanel">
               <div className="libraryHeading">
                 <div>
                   <p className="eyebrow">PLATFORMY</p>
@@ -209,32 +225,32 @@ export default async function Home() {
                 </div>
               </div>
               <div className="platformOverview">
-                <div className="platformCard connected">
+                <Link href="/platforms/youtube" className={`platformCard${summary ? " connected" : " soon"}`}>
                   <span className="platformIcon">▶</span>
                   <div>
                     <strong>YouTube</strong>
                     <p>
-                      {summary.total_videos} filmów · {compact(summary.total_views)} wyświetleń
+                      {summary ? `${summary.total_videos} filmów · ${compact(summary.total_views)} wyświetleń` : "Połącz, aby zacząć synchronizację"}
                     </p>
                   </div>
-                  <span className="pill success">Połączono</span>
-                </div>
-                <div className="platformCard soon">
-                  <span className="platformIcon">f</span>
-                  <div>
-                    <strong>Facebook</strong>
-                    <p>Integracja w przygotowaniu</p>
-                  </div>
-                  <span className="pill">Wkrótce</span>
-                </div>
-                <div className="platformCard soon">
-                  <span className="platformIcon">◎</span>
-                  <div>
-                    <strong>Instagram</strong>
-                    <p>Integracja w przygotowaniu</p>
-                  </div>
-                  <span className="pill">Wkrótce</span>
-                </div>
+                  <span className={`pill${summary ? " success" : ""}`}>{summary ? "Połączono" : "Połącz"}</span>
+                </Link>
+                {metaPlatforms.map((platformSummary) => (
+                  <Link
+                    key={platformSummary.platform}
+                    href={platformPath(platformSummary.platform)}
+                    className={`platformCard${platformSummary.connected ? " connected" : " soon"}`}
+                  >
+                    <span className="platformIcon">{META_PLATFORM_ICONS[platformSummary.platform]}</span>
+                    <div>
+                      <strong>{PLATFORM_LABELS[platformSummary.platform]}</strong>
+                      <p>{platformSummary.connected ? (platformSummary.display_name ?? "Połączono") : "Połącz, aby zacząć synchronizację"}</p>
+                    </div>
+                    <span className={`pill${platformSummary.connected ? " success" : ""}`}>
+                      {platformSummary.connected ? "Połączono" : "Połącz"}
+                    </span>
+                  </Link>
+                ))}
                 <div className="platformCard soon">
                   <span className="platformIcon">♪</span>
                   <div>
@@ -244,8 +260,6 @@ export default async function Home() {
                   <span className="pill">Wkrótce</span>
                 </div>
               </div>
-            </div>
-            <YoutubePanel />
           </section>
 
           <section className="libraryPanel">
@@ -259,11 +273,13 @@ export default async function Home() {
               </Link>
             </div>
             <RankedVideoList
-              items={[...videos]
-                .sort((a, b) => +new Date(b.published_at) - +new Date(a.published_at))
+              items={[...allPlatformVideos]
+                .sort((a, b) => +new Date(b.published_at ?? 0) - +new Date(a.published_at ?? 0))
                 .slice(0, 5)
-                .map((video) => withDerivedMetrics(video))}
-              emptyMessage="Brak filmów."
+                .map((video) => ({ ...withPlatformDerivedMetrics(video), youtube_video_id: video.external_id, ranking_key: `${video.platform}:${video.external_id}` }))}
+              hrefBuilder={(video) => `/platforms/${video.platform}/videos/${video.youtube_video_id}`}
+              emptyMessage="Brak materiałów."
+              renderMeta={(video) => <PlatformBadge platform={video.platform} />}
               renderMetrics={(video) => (
                 <>
                   <span>{compact(video.views)} wyśw.</span>
@@ -271,7 +287,7 @@ export default async function Home() {
                   <span>{video.engagement_rate.toFixed(2)}% ER</span>
                 </>
               )}
-              renderActions={(video) => <ExternalLink href={youtubeWatchUrl(video.youtube_video_id)} label="Obejrzyj na YouTube" />}
+              renderActions={(video) => (video.url ? <ExternalLink href={video.url} label="Otwórz oryginał" /> : null)}
             />
           </section>
 

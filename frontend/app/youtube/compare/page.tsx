@@ -1,33 +1,20 @@
 import { AppShell } from "../../../components/app-shell";
-import { PlatformSubNav } from "../../../components/platform-sub-nav";
+import { PlatformExperienceHeader } from "../../../components/platform-experience-header";
 import { YoutubeCompare } from "../../../components/youtube-compare";
+import { createPlatformOverviewApi, type PlatformKeyOrAll } from "../../../lib/platform-api";
 import { createYoutubeApi } from "../../../lib/youtube-api";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
 
 export default async function YoutubeComparePage() {
   const api = createYoutubeApi(INTERNAL_API_URL);
-  const videos = await api.getVideos();
+  const [videos, summaries] = await Promise.all([api.getVideos(), createPlatformOverviewApi(INTERNAL_API_URL).listPlatforms()]);
+  const connected: Partial<Record<PlatformKeyOrAll, boolean>> = {};
+  for (const item of summaries) connected[item.platform] = item.connected;
 
   return (
     <AppShell active="/youtube">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">YOUTUBE / PORÓWNANIE</p>
-          <h1>Porównanie filmów</h1>
-          <p className="muted">Zestaw do 6 filmów, aby porównać wyniki obok siebie.</p>
-        </div>
-      </header>
-
-      <PlatformSubNav
-        active="/youtube/compare"
-        tabs={[
-          { href: "/youtube", label: "Dashboard" },
-          { href: "/youtube/compare", label: "Porównanie" },
-          { href: "/youtube/intelligence", label: "Co dalej?" },
-          { href: "/youtube/community", label: "Komentarze" },
-        ]}
-      />
+      <PlatformExperienceHeader platform="youtube" section="compare" connected={connected} title="Porównanie — YouTube" description="Zestaw do 6 filmów, aby porównać wyniki obok siebie." />
 
       {videos.length === 0 ? (
         <div className="emptyState">

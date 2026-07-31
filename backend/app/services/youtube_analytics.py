@@ -185,6 +185,9 @@ def get_video_detail(db: Session, youtube_video_id: str) -> Optional[dict]:
         "views": views,
         "likes": likes,
         "comments": comments,
+        # YouTube Data API v3 does not attribute subscriber changes to one
+        # video. Keep the contract explicit and honest until Analytics API is integrated.
+        "followers_gained": None,
         "engagement_rate": _engagement_rate(likes, comments, views),
         "views_per_day": round(views / days_since_published, 2),
         "like_ratio": round(likes / views * 100, 3) if views else 0.0,
